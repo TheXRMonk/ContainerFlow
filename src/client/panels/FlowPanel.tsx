@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { Play, Trash2, ChevronDown, Zap } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Play, Trash2, ChevronDown, Zap, Radio } from "lucide-react";
 import type { Flow, FlowSettings } from "../../shared/types";
 import type { ParticleEngine } from "../engine/particles";
 import type { Service } from "../../shared/types";
@@ -15,7 +15,41 @@ interface FlowPanelProps {
 export function FlowPanel({ flows, settings, engine, services, onSimulate }: FlowPanelProps) {
   const [open, setOpen] = useState(false);
   const [particleCount, setParticleCount] = useState(0);
+  const [demoActive, setDemoActive] = useState(false);
+  const demoRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const demoIndexRef = useRef(0);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // Demo mode: simulate a random flow every ~3s
+  const toggleDemo = useCallback(() => {
+    setDemoActive((prev) => {
+      if (prev) {
+        if (demoRef.current) clearInterval(demoRef.current);
+        demoRef.current = null;
+        return false;
+      }
+      demoIndexRef.current = 0;
+      demoRef.current = setInterval(() => {
+        if (flows.length === 0) return;
+        const flow = flows[demoIndexRef.current % flows.length];
+        onSimulate(flow);
+        demoIndexRef.current++;
+      }, 3000);
+      // Fire one immediately
+      if (flows.length > 0) {
+        onSimulate(flows[0]);
+        demoIndexRef.current = 1;
+      }
+      return true;
+    });
+  }, [flows, onSimulate]);
+
+  // Cleanup interval on unmount or when flows change
+  useEffect(() => {
+    return () => {
+      if (demoRef.current) clearInterval(demoRef.current);
+    };
+  }, []);
 
   // Update particle count periodically
   useEffect(() => {
@@ -85,6 +119,17 @@ export function FlowPanel({ flows, settings, engine, services, onSimulate }: Flo
 
           <div className="border-t border-slate-700/50 mt-1 pt-1 flex gap-1 px-2">
             <button
+              onClick={toggleDemo}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded transition-colors flex-1 ${
+                demoActive
+                  ? "text-green-400 bg-green-500/15 hover:bg-green-500/25"
+                  : "text-slate-400 hover:text-green-400 hover:bg-slate-700/60"
+              }`}
+            >
+              <Radio size={12} className={demoActive ? "animate-pulse" : ""} />
+              {demoActive ? "Demo ON" : "Demo"}
+            </button>
+            <button
               onClick={() => {
                 for (const flow of flows) onSimulate(flow);
               }}
@@ -95,6 +140,7 @@ export function FlowPanel({ flows, settings, engine, services, onSimulate }: Flo
             </button>
             <button
               onClick={() => {
+                if (demoActive) toggleDemo();
                 engine.clear();
                 setParticleCount(0);
               }}

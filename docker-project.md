@@ -1229,7 +1229,6 @@ El backend siempre envía el campo `project` en cada servicio. El frontend tiene
 - [ ] Panel de control de flows (toggle, simulate)
 - [ ] Efecto glow/neón en partículas
 - [ ] Trail (estela) detrás de cada partícula
-- [ ] Labels flotantes en partículas
 
 ### Fase 3 — MCP
 - [ ] MCP server con tools de Docker + flows

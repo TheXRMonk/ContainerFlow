@@ -70,9 +70,88 @@ bun run start
 - **Eventos Docker** — flash visual cuando un container inicia, para o reinicia
 - **Filtro de proyectos** — dropdown para mostrar/ocultar proyectos, persiste entre sesiones
 - **Autenticacion** — pantalla de login con AUTH_TOKEN para acceso remoto seguro
+- **Simulacion de flujos** — particulas animadas que recorren los edges para visualizar como viajan los requests/datos entre servicios. Configurable via `flows.yaml`
 - **Leyenda de conexiones** — colores por tipo: Database (azul), Cache (rojo), Broker (naranja), Proxy (verde)
 - **Grupos visuales** — recuadros por proyecto/compose con titulo, archivo compose y conteo de containers
 - **Tooltips** — hover sobre cada nodo para ver estado, imagen, ID y puertos
+
+## Simulacion de Flujos
+
+Crea un archivo `flows.yaml` en la raiz del proyecto para definir flujos de datos animados:
+
+```yaml
+flows:
+  api_request:
+    name: "API Request"
+    color: "#22d3ee"
+    speed: 1.4
+    path: [nginx, backend, db, backend, nginx]
+
+  background_job:
+    name: "Tarea en Background"
+    color: "#ec4899"
+    speed: 1.8
+    path: [celery-beat, ninja-redis, celery-worker, db]
+
+settings:
+  particle_size: 2
+  trail: true
+  trail_opacity: 0.3
+  glow: true
+  max_particles: 50
+```
+
+- **path** usa los nombres de los servicios (como aparecen en `docker compose ps`)
+- **speed** controla la velocidad (mayor = mas lento)
+- Las particulas recorren los edges entre nodos, incluyendo caminos de ida y vuelta
+- Al llegar a cada nodo, la particula hace una pausa y el nodo se ilumina con el color del flujo
+- Si no existe `flows.yaml`, el panel de flujos no aparece
+- **Modo Demo** — boton "Demo" en el panel que auto-simula flujos en loop cada ~3 segundos, ciclando entre todos los flujos definidos. Ideal para presentaciones
+
+## MCP Server (Claude Code integration)
+
+DockerFlow incluye un servidor MCP (Model Context Protocol) que permite gestionar flujos y monitorear servicios Docker desde Claude Code u otro LLM compatible, sin abrir el browser.
+
+### Instalacion
+
+```bash
+bun run setup:mcp
+```
+
+Esto configura el MCP server de forma **global** en `~/.claude/settings.json`. Reinicia Claude Code y las herramientas quedan disponibles en **todos** tus proyectos.
+
+Para ejecutar el servidor MCP manualmente (debug):
+
+```bash
+bun run mcp
+```
+
+### Herramientas disponibles
+
+| Tool | Descripcion |
+|---|---|
+| `list_flows` | Lista flujos configurados y settings |
+| `create_flow` | Crea un flujo nuevo en flows.yaml |
+| `update_flow` | Modifica un flujo existente |
+| `delete_flow` | Elimina un flujo de flows.yaml |
+| `simulate_flow` | Info para disparar simulacion en clientes conectados |
+| `list_services` | Servicios Docker con estado, imagen, puertos |
+| `get_stats` | CPU/memoria por servicio |
+| `get_logs` | Ultimas N lineas de logs de un container |
+| `get_connections` | Conexiones detectadas entre servicios |
+| `start_dashboard` | Arranca el servidor dev (Vite + backend) |
+| `stop_dashboard` | Para el servidor dev |
+
+### Uso desde Claude Code
+
+Una vez configurado, las herramientas estan disponibles directamente. Ejemplos:
+
+- "Arranca el dashboard en modo dev"
+- "Lista los servicios Docker corriendo"
+- "Muestra los logs del container abc123"
+- "Crea un flujo llamado api_request que pase por nginx, backend y db"
+- "Cuanto CPU esta usando cada servicio?"
+- "Para el dashboard"
 
 ## Stack
 
@@ -95,6 +174,7 @@ src/
     index.ts        — servidor Hono + WebSocket + CLI args
     docker.ts       — descubrimiento de servicios y conexiones
     watcher.ts      — polling de stats + stream de eventos Docker
+    mcp.ts          — servidor MCP (stdio) para Claude Code
   client/
     App.tsx          — dashboard principal + login screen
     main.tsx         — entry point React
@@ -106,8 +186,15 @@ src/
       useDocker.ts   — hook WebSocket para datos en tiempo real
     engine/
       layout.ts      — layout de grupos + grid + edges
+      particles.ts   — motor de particulas (spawn, tick, pausa en nodos)
+    components/
+      ParticleOverlay.tsx — renderizado SVG de particulas sobre edges
+    panels/
+      LogPanel.tsx   — panel de logs por container
+      FlowPanel.tsx  — panel de simulacion de flujos
   shared/
     types.ts         — tipos compartidos server/client
+flows.yaml           — configuracion de flujos (opcional)
 ```
 
 ## Licencia

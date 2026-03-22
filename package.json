@@ -8,9 +8,12 @@
     "dev:client": "vite",
     "build": "vite build",
     "start": "bun run src/server/index.ts --all",
-    "preview": "bun run build && bun run start"
+    "preview": "bun run build && bun run start",
+    "mcp": "bun src/server/mcp.ts",
+    "setup:mcp": "bun scripts/install-mcp.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "dockerode": "^4",
     "hono": "^4",
     "lucide-react": "^0.577.0",
