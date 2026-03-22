@@ -770,6 +770,7 @@ function Dashboard({ token }: { token: string }) {
           fitViewOptions={{ padding: 0.3 }}
           minZoom={0.2}
           maxZoom={2.5}
+          panOnScroll={true}
           proOptions={{ hideAttribution: true }}
         >
           <ParticleOverlay engine={engine} settings={flowSettings} onNodeHits={handleNodeHits} />
