@@ -1,0 +1,35 @@
+{
+  "name": "alteonx-dockerflow",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"bun run dev:server -- --all\" \"bun run dev:client\"",
+    "dev:server": "bun --watch src/server/index.ts",
+    "dev:client": "vite",
+    "build": "vite build",
+    "start": "bun run src/server/index.ts --all",
+    "preview": "bun run build && bun run start"
+  },
+  "dependencies": {
+    "dockerode": "^4",
+    "hono": "^4",
+    "lucide-react": "^0.577.0",
+    "yaml": "^2",
+    "zod": "^3"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4",
+    "concurrently": "^9",
+    "react": "^19",
+    "react-dom": "^19",
+    "@xyflow/react": "^12",
+    "@dagrejs/dagre": "^1",
+    "tailwindcss": "^4",
+    "@tailwindcss/vite": "^4",
+    "typescript": "^5",
+    "vite": "^6"
+  }
+}
