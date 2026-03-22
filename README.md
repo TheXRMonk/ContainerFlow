@@ -73,6 +73,7 @@ bun run start
 - **Simulacion de flujos** — particulas animadas que recorren los edges para visualizar como viajan los requests/datos entre servicios. Configurable via `flows.yaml`
 - **Leyenda de conexiones** — colores por tipo: Database (azul), Cache (rojo), Broker (naranja), Proxy (verde)
 - **Grupos visuales** — recuadros por proyecto/compose con titulo, archivo compose y conteo de containers
+- **Logs de containers** — click en un container para ver sus logs en tiempo real, con scroll automatico y opcion de copiar
 - **Tooltips** — hover sobre cada nodo para ver estado, imagen, ID y puertos
 
 ## Simulacion de Flujos
