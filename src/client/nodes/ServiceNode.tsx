@@ -101,6 +101,7 @@ export const ServiceNode = memo(function ServiceNode({ data }: NodeProps) {
   const s = stateStyles[d.state] || stateStyles.exited;
   const { Icon, color: iconColor } = guessIcon(d.image, d.label);
   const flashClass = d.flash || "";
+  const particleGlow = (d as any).particleGlow || "";
   const activeHandles = new Set<string>((d as any).activeHandles || []);
   const highlighted = (d as any).highlighted;
   const hdot = (id: string) => {
@@ -119,9 +120,13 @@ export const ServiceNode = memo(function ServiceNode({ data }: NodeProps) {
     <div
       title={`${d.label} (${d.state})\nImage: ${d.image}\nID: ${(d as any).id || ""}\nPorts: ${d.ports?.map((p) => `${p.host}:${p.container}`).join(", ") || "none"}`}
       className={`relative rounded-xl border border-slate-700/80 ${s.bg} backdrop-blur-sm
-                  shadow-lg shadow-black/30 p-4 min-w-[220px] ring-2 ${s.ring}
-                  transition-all duration-500 ${flashClass}
+                  shadow-lg shadow-black/30 p-4 min-w-[220px] ring-2 ${particleGlow ? "" : s.ring}
+                  transition-all duration-300 ${flashClass}
                   ${d.state === "running" ? "node-pulse-running" : ""}`}
+      style={particleGlow ? {
+        boxShadow: `0 0 20px ${particleGlow}60, 0 0 40px ${particleGlow}30, inset 0 0 15px ${particleGlow}15`,
+        borderColor: particleGlow,
+      } : undefined}
     >
       {/* Top handles — left offset, transform centered horizontally */}
       {offsets.map((o, i) => (

@@ -19,8 +19,11 @@ import { ServiceNode } from "./nodes/ServiceNode";
 import { GroupNode } from "./nodes/GroupNode";
 import { useDocker } from "./hooks/useDocker";
 import { buildLayout, computeEdges } from "./engine/layout";
+import { ParticleEngine } from "./engine/particles";
+import { ParticleOverlay } from "./components/ParticleOverlay";
 import { LogPanel } from "./panels/LogPanel";
-import type { Service } from "../shared/types";
+import { FlowPanel } from "./panels/FlowPanel";
+import type { Service, Flow } from "../shared/types";
 
 function OffsetEdge(props: EdgeProps) {
   const offset = (props.data as any)?.offset ?? 0;
@@ -207,7 +210,13 @@ export default function App() {
 }
 
 function Dashboard({ token }: { token: string }) {
-  const { services, connections, stats, statsVersion, events, connected, logLines, sendMessage, clearLogLines } = useDocker(token);
+  const { services, connections, stats, statsVersion, events, connected, logLines, sendMessage, clearLogLines, flows, flowSettings, onParticleSpawn } = useDocker(token);
+  const engineRef = useRef<ParticleEngine>(null);
+  if (!engineRef.current) {
+    engineRef.current = new ParticleEngine();
+  }
+  const engine = engineRef.current;
+  engine.maxParticles = flowSettings.max_particles;
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const initialLayoutDone = useRef(false);
@@ -531,6 +540,64 @@ function Dashboard({ token }: { token: string }) {
     }, 1200);
   }, [events]);
 
+  // Service name → UID map for flow path resolution
+  const serviceNameToUid = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of services) {
+      map.set(s.name, s.uid);
+    }
+    return map;
+  }, [services]);
+
+  const resolveFlowPath = useCallback((path: string[]): string[] => {
+    return path.map((name) => serviceNameToUid.get(name) || name);
+  }, [serviceNameToUid]);
+
+  const handleSimulate = useCallback((flow: Flow) => {
+    const pathUids = resolveFlowPath(flow.path);
+    engine.spawn(flow.id, flow.color, flow.speed, pathUids);
+    // Also broadcast via WS so other clients see it
+    sendMessage({ type: "simulate_flow", flowId: flow.id });
+  }, [resolveFlowPath, engine, sendMessage]);
+
+  // Handle particle spawns from other clients via WS
+  useEffect(() => {
+    return onParticleSpawn((data) => {
+      const pathUids = resolveFlowPath(data.path);
+      engine.spawn(data.flowId, data.color, data.speed, pathUids);
+    });
+  }, [onParticleSpawn, resolveFlowPath, engine]);
+
+  // Handle particle node hits — flash node with particle color
+  const nodeHitTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const handleNodeHits = useCallback((hits: { nodeId: string; color: string }[]) => {
+    for (const hit of hits) {
+      // Clear existing timer for this node
+      const existing = nodeHitTimers.current.get(hit.nodeId);
+      if (existing) clearTimeout(existing);
+
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === hit.nodeId
+            ? { ...n, data: { ...n.data, particleGlow: hit.color } }
+            : n
+        )
+      );
+
+      const timer = setTimeout(() => {
+        setNodes((prev) =>
+          prev.map((n) =>
+            n.id === hit.nodeId
+              ? { ...n, data: { ...n.data, particleGlow: "" } }
+              : n
+          )
+        );
+        nodeHitTimers.current.delete(hit.nodeId);
+      }, 500);
+      nodeHitTimers.current.set(hit.nodeId, timer);
+    }
+  }, [setNodes]);
+
   const runningCount = filteredServices.filter((s) => s.state === "running").length;
 
   // Highlight edges connected to selected node, dim the rest
@@ -598,6 +665,15 @@ function Dashboard({ token }: { token: string }) {
         </div>
 
         <div className="flex items-center gap-5">
+          {/* Flow panel */}
+          <FlowPanel
+            flows={flows}
+            settings={flowSettings}
+            engine={engine}
+            services={services}
+            onSimulate={handleSimulate}
+          />
+
           {/* Project filter dropdown */}
           {projects.length > 1 && (
             <div className="relative" ref={filterRef}>
@@ -696,6 +772,7 @@ function Dashboard({ token }: { token: string }) {
           maxZoom={2.5}
           proOptions={{ hideAttribution: true }}
         >
+          <ParticleOverlay engine={engine} settings={flowSettings} onNodeHits={handleNodeHits} />
           <Background color="#1e293b" gap={24} size={1} />
           <Controls position="bottom-left" />
 

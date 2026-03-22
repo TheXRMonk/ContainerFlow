@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { Service, Connection, Stats, DockerEvent, LogLine, WSMessage } from "../../shared/types";
+import type { Service, Connection, Stats, DockerEvent, LogLine, Flow, FlowSettings, WSMessage } from "../../shared/types";
 
 function arraysEqual<T extends { uid?: string; name?: string }>(a: T[], b: T[]): boolean {
   if (a.length !== b.length) return false;
@@ -17,6 +17,11 @@ export function useDocker(token = "") {
   const [statsVersion, setStatsVersion] = useState(0);
   const [events, setEvents] = useState<DockerEvent[]>([]);
   const [logLines, setLogLines] = useState<LogLine[]>([]);
+  const [flows, setFlows] = useState<Flow[]>([]);
+  const [flowSettings, setFlowSettings] = useState<FlowSettings>({
+    particle_size: 5, trail: true, trail_opacity: 0.3, glow: true, max_particles: 50,
+  });
+  const particleSpawnCallbacks = useRef<Set<(data: { flowId: string; color: string; speed: number; path: string[] }) => void>>(new Set());
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -29,9 +34,14 @@ export function useDocker(token = "") {
     Promise.all([
       fetch("/api/services", { headers }).then((r) => r.ok ? r.json() : []),
       fetch("/api/connections", { headers }).then((r) => r.ok ? r.json() : []),
-    ]).then(([svcs, conns]) => {
+      fetch("/api/flows", { headers }).then((r) => r.ok ? r.json() : null),
+    ]).then(([svcs, conns, flowData]) => {
       setServices((prev) => prev.length === 0 ? svcs : prev);
       setConnections((prev) => prev.length === 0 ? conns : prev);
+      if (flowData?.flows) {
+        setFlows((prev) => prev.length === 0 ? flowData.flows : prev);
+        setFlowSettings(flowData.settings);
+      }
     }).catch(() => {});
   }, [token]);
 
@@ -94,6 +104,13 @@ export function useDocker(token = "") {
               return next.length > 2000 ? next.slice(-1500) : next;
             });
             break;
+          case "flows":
+            setFlows(msg.data.flows);
+            setFlowSettings(msg.data.settings);
+            break;
+          case "particle_spawn":
+            for (const cb of particleSpawnCallbacks.current) cb(msg.data);
+            break;
         }
       } catch {}
     };
@@ -134,5 +151,10 @@ export function useDocker(token = "") {
 
   const clearLogLines = useCallback(() => setLogLines([]), []);
 
-  return { services, connections, stats: statsRef.current, statsVersion, events, connected, logLines, sendMessage, clearLogLines };
+  const onParticleSpawn = useCallback((cb: (data: { flowId: string; color: string; speed: number; path: string[] }) => void) => {
+    particleSpawnCallbacks.current.add(cb);
+    return () => { particleSpawnCallbacks.current.delete(cb); };
+  }, []);
+
+  return { services, connections, stats: statsRef.current, statsVersion, events, connected, logLines, sendMessage, clearLogLines, flows, flowSettings, onParticleSpawn };
 }

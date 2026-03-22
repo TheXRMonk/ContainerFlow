@@ -40,6 +40,23 @@ export interface LogLine {
   stream: "stdout" | "stderr";
 }
 
+export interface Flow {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  speed: number;
+  path: string[];
+}
+
+export interface FlowSettings {
+  particle_size: number;
+  trail: boolean;
+  trail_opacity: number;
+  glow: boolean;
+  max_particles: number;
+}
+
 export type WSMessage =
   | { type: "services"; data: Service[] }
   | { type: "connections"; data: Connection[] }
@@ -47,4 +64,7 @@ export type WSMessage =
   | { type: "docker_event"; data: DockerEvent }
   | { type: "subscribe_logs"; container: string }
   | { type: "unsubscribe_logs" }
-  | { type: "log_line"; data: LogLine };
+  | { type: "log_line"; data: LogLine }
+  | { type: "flows"; data: { flows: Flow[]; settings: FlowSettings } }
+  | { type: "simulate_flow"; flowId: string }
+  | { type: "particle_spawn"; data: { flowId: string; color: string; speed: number; path: string[] } };

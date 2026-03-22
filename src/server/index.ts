@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import { discoverServices, discoverConnections, getContainerLogs, streamContainerLogs } from "./docker";
 import { pollStats, watchDockerEvents } from "./watcher";
+import { loadFlows, getFlows, getSettings } from "./flows";
 import type { WSMessage } from "../shared/types";
 
 const app = new Hono();
@@ -49,6 +50,13 @@ app.get("/api/connections", async (c) => {
 });
 
 app.get("/api/health", (c) => c.json({ ok: true, mode: ALL ? "all" : "filtered", projects: PROJECTS }));
+
+// ── Flows ──
+loadFlows();
+
+app.get("/api/flows", (c) => {
+  return c.json({ flows: getFlows(), settings: getSettings() });
+});
 
 app.get("/api/logs/:id", async (c) => {
   const id = c.req.param("id");
@@ -165,7 +173,13 @@ const server = Bun.serve({
   },
   websocket: {
     open(ws) {
-      clients.add(ws as unknown as WebSocket);
+      const native = ws as unknown as WebSocket;
+      clients.add(native);
+      // Send flows to new client
+      const flowsData = { flows: getFlows(), settings: getSettings() };
+      if (flowsData.flows.length > 0) {
+        try { native.send(JSON.stringify({ type: "flows", data: flowsData })); } catch {}
+      }
     },
     close(ws) {
       const native = ws as unknown as WebSocket;
@@ -189,6 +203,14 @@ const server = Bun.serve({
           logStreams.set(native, stream);
         } else if (msg.type === "unsubscribe_logs") {
           cleanupLogStream(native);
+        } else if (msg.type === "simulate_flow" && msg.flowId) {
+          const flow = getFlows().find((f) => f.id === msg.flowId);
+          if (flow) {
+            broadcast({
+              type: "particle_spawn",
+              data: { flowId: flow.id, color: flow.color, speed: flow.speed, path: flow.path },
+            });
+          }
         }
       } catch {}
     },
