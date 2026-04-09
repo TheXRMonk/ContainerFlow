@@ -13,7 +13,7 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Wifi, WifiOff, ChevronDown, Check, Lock, LogOut, Eye, EyeOff, Terminal, Database, Zap, Radio, Globe } from "lucide-react";
+import { Wifi, WifiOff, ChevronDown, Check, Lock, LogOut, Eye, EyeOff, Terminal, Database, Zap, Radio, Globe, Cpu, MemoryStick } from "lucide-react";
 
 import { ServiceNode } from "./nodes/ServiceNode";
 import { GroupNode } from "./nodes/GroupNode";
@@ -600,6 +600,21 @@ function Dashboard({ token }: { token: string }) {
 
   const runningCount = filteredServices.filter((s) => s.state === "running").length;
 
+  // Total resource consumption
+  const totalStats = useMemo(() => {
+    let cpu = 0;
+    let mem = 0;
+    for (const svc of filteredServices) {
+      const s = stats.get(svc.uid);
+      if (s) {
+        cpu += s.cpu;
+        mem += s.mem_mb;
+      }
+    }
+    return { cpu, mem };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredServices, statsVersion]);
+
   // Highlight edges connected to selected node, dim the rest
   const connectedNodeIds = useMemo(() => {
     if (!selectedNode) return null;
@@ -662,6 +677,23 @@ function Dashboard({ token }: { token: string }) {
           <span className="text-xs text-slate-600 font-mono bg-slate-800 px-2 py-0.5 rounded">
             v0.1
           </span>
+
+          {/* Total resource usage */}
+          {totalStats.cpu > 0 && (
+            <div className="flex items-center gap-3 ml-2 text-xs font-mono bg-slate-800/80 border border-slate-700/50 px-3 py-1 rounded-md">
+              <div className="flex items-center gap-1.5">
+                <Cpu size={12} className="text-cyan-500" />
+                <span className="text-cyan-400">{totalStats.cpu.toFixed(1)}%</span>
+              </div>
+              <div className="w-px h-3 bg-slate-700" />
+              <div className="flex items-center gap-1.5">
+                <MemoryStick size={12} className="text-violet-500" />
+                <span className="text-violet-400">
+                  {totalStats.mem >= 1024 ? `${(totalStats.mem / 1024).toFixed(1)} GB` : `${totalStats.mem.toFixed(0)} MB`}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-5">
