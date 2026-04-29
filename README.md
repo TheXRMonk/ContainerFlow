@@ -1,6 +1,6 @@
-# DockerFlow AlteonX
+# Flowteon
 
-Visualizador en tiempo real de arquitecturas Docker. Muestra servicios, conexiones y metricas de todos tus proyectos Docker Compose en un dashboard interactivo.
+Real-time Docker architecture visualizer. Displays services, connections and metrics from all your Docker Compose projects in an interactive dashboard.
 
 ## Requisitos
 
@@ -10,8 +10,8 @@ Visualizador en tiempo real de arquitecturas Docker. Muestra servicios, conexion
 ## Instalacion
 
 ```bash
-git clone https://github.com/RGJorge/alteonx-dockerflow.git
-cd alteonx-dockerflow
+git clone https://github.com/RGJorge/flowteon.git
+cd flowteon
 bun install
 ```
 
@@ -200,4 +200,8 @@ flows.yaml           — configuracion de flujos (opcional)
 
 ## Licencia
 
-MIT
+Copyright (C) 2026 Jorge Gonzalez D. (RGJorge)
+
+Este proyecto esta licenciado bajo **GNU Affero General Public License v3.0** (AGPL-3.0). Ver el archivo [LICENSE](LICENSE) para los terminos completos.
+
+Para uso comercial con codigo cerrado, contactar al autor para una licencia comercial.
