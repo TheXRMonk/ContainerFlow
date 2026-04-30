@@ -38,7 +38,7 @@ Variables disponibles:
 bun run dev
 ```
 
-Abre `http://localhost:5173` (Vite proxy → backend en puerto 9470).
+Abre `http://localhost:9420` (Vite dev con hot reload, proxea API al backend en puerto 9470).
 
 ### Produccion
 
@@ -204,4 +204,4 @@ Copyright (C) 2026 Jorge Gonzalez D. (RGJorge)
 
 Este proyecto esta licenciado bajo **GNU Affero General Public License v3.0** (AGPL-3.0). Ver el archivo [LICENSE](LICENSE) para los terminos completos.
 
-Para uso comercial con codigo cerrado, contactar al autor para una licencia comercial.
+Para uso comercial con codigo cerrado, contactar para una licencia comercial: alteonx.servicios@gmail.com

@@ -1,12 +1,12 @@
 import type { Node, Edge } from "@xyflow/react";
 import type { Service, Connection, Stats } from "../../shared/types";
 
-const NODE_WIDTH = 240;
-const NODE_HEIGHT = 160;
+export const NODE_WIDTH = 240;
+export const NODE_HEIGHT = 160;
 const NODE_GAP_X = 36;
 const NODE_GAP_Y = 36;
-const GROUP_PADDING = 28;
-const GROUP_HEADER = 44;
+export const GROUP_PADDING = 28;
+export const GROUP_HEADER = 44;
 const GROUP_GAP = 50;
 
 function getComposeKey(file: string): string {

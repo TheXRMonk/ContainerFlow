@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
+import { cors } from "hono/cors";
 import path from "path";
 import fs from "fs";
 import { discoverServices, discoverConnections, getContainerLogs, streamContainerLogs } from "./docker";
@@ -8,6 +9,9 @@ import { loadFlows, getFlows, getSettings } from "./flows";
 import type { WSMessage } from "../shared/types";
 
 const app = new Hono();
+
+// ── CORS ──
+app.use("/api/*", cors());
 
 // ── CLI args ──
 const args = process.argv.slice(2);
@@ -23,6 +27,8 @@ const PROJECTS = projectsFlag
 const PORT = parseInt(process.env.PORT || "9470");
 const AUTH_TOKEN = process.env.AUTH_TOKEN || "";
 const HOST = AUTH_TOKEN ? "0.0.0.0" : "127.0.0.1";
+const POLL_INTERVAL_MS = 5000;
+const WS_RECONNECT_MS = 3000;
 
 // ── Auth middleware ──
 if (AUTH_TOKEN) {
@@ -60,7 +66,10 @@ app.get("/api/flows", (c) => {
 
 app.get("/api/logs/:id", async (c) => {
   const id = c.req.param("id");
-  const tail = parseInt(c.req.query("tail") || "200");
+  if (!/^[a-f0-9]{12,64}$/.test(id)) {
+    return c.json({ error: "Invalid container ID" }, 400);
+  }
+  const tail = Math.min(Math.max(parseInt(c.req.query("tail") || "200") || 200, 1), 5000);
   try {
     const lines = await getContainerLogs(id, tail);
     return c.json(lines);
@@ -78,7 +87,9 @@ app.get("/api/positions", (c) => {
       const data = JSON.parse(fs.readFileSync(POSITIONS_FILE, "utf-8"));
       return c.json(data);
     }
-  } catch {}
+  } catch (err) {
+    console.error("Failed to read positions file:", err);
+  }
   return c.json({});
 });
 
@@ -98,11 +109,17 @@ app.get("/*", serveStatic({ root: "./dist", path: "index.html" }));
 
 // ── WebSocket ──
 const clients = new Set<WebSocket>();
+const authenticatedClients = new Set<WebSocket>();
 const logStreams = new Map<WebSocket, { destroy: () => void }>();
+
+function isAuthenticated(ws: WebSocket): boolean {
+  return !AUTH_TOKEN || authenticatedClients.has(ws);
+}
 
 function broadcast(msg: WSMessage) {
   const data = JSON.stringify(msg);
   for (const ws of clients) {
+    if (!isAuthenticated(ws)) continue;
     try {
       ws.send(data);
     } catch {}
@@ -112,8 +129,12 @@ function broadcast(msg: WSMessage) {
 function cleanupLogStream(ws: WebSocket) {
   const stream = logStreams.get(ws);
   if (stream) {
-    stream.destroy();
     logStreams.delete(ws);
+    try {
+      stream.destroy();
+    } catch (err) {
+      console.error("Failed to destroy log stream:", err);
+    }
   }
 }
 
@@ -150,7 +171,7 @@ setInterval(async () => {
   } catch (err) {
     console.error("Poll error:", err);
   }
-}, 5000);
+}, POLL_INTERVAL_MS);
 
 // ── Start ──
 const server = Bun.serve({
@@ -159,12 +180,8 @@ const server = Bun.serve({
   fetch(req, server) {
     const url = new URL(req.url);
 
-    // WebSocket upgrade
+    // WebSocket upgrade (auth handled via first message)
     if (url.pathname === "/ws") {
-      const token = url.searchParams.get("token") || "";
-      if (AUTH_TOKEN && token !== AUTH_TOKEN) {
-        return new Response("Unauthorized", { status: 401 });
-      }
       if (server.upgrade(req)) return undefined;
       return new Response("WebSocket upgrade failed", { status: 400 });
     }
@@ -175,24 +192,47 @@ const server = Bun.serve({
     open(ws) {
       const native = ws as unknown as WebSocket;
       clients.add(native);
-      // Send flows to new client
-      const flowsData = { flows: getFlows(), settings: getSettings() };
-      if (flowsData.flows.length > 0) {
-        try { native.send(JSON.stringify({ type: "flows", data: flowsData })); } catch {}
+
+      if (!AUTH_TOKEN) {
+        // No auth required — send data immediately
+        const flowsData = { flows: getFlows(), settings: getSettings() };
+        if (flowsData.flows.length > 0) {
+          try { native.send(JSON.stringify({ type: "flows", data: flowsData })); } catch {}
+        }
       }
     },
     close(ws) {
       const native = ws as unknown as WebSocket;
       cleanupLogStream(native);
       clients.delete(native);
+      authenticatedClients.delete(native);
     },
     message(ws, message) {
       try {
         const msg = JSON.parse(typeof message === "string" ? message : new TextDecoder().decode(message as ArrayBuffer));
         const native = ws as unknown as WebSocket;
 
+        // Handle authentication via first message
+        if (msg.type === "auth") {
+          if (msg.token === AUTH_TOKEN) {
+            authenticatedClients.add(native);
+            native.send(JSON.stringify({ type: "auth_ok" }));
+            // Send initial data after auth
+            const flowsData = { flows: getFlows(), settings: getSettings() };
+            if (flowsData.flows.length > 0) {
+              native.send(JSON.stringify({ type: "flows", data: flowsData }));
+            }
+          } else {
+            native.send(JSON.stringify({ type: "auth_error" }));
+            native.close();
+          }
+          return;
+        }
+
+        // Reject messages from unauthenticated clients
+        if (!isAuthenticated(native)) return;
+
         if (msg.type === "subscribe_logs" && msg.container) {
-          // Clean up any existing stream first
           cleanupLogStream(native);
 
           const stream = streamContainerLogs(msg.container, (line) => {
@@ -212,13 +252,15 @@ const server = Bun.serve({
             });
           }
         }
-      } catch {}
+      } catch (err) {
+        console.error("Failed to handle WS message:", err);
+      }
     },
   },
 });
 
 const mode = ALL ? "all projects" : `project(s): ${PROJECTS.join(", ")}`;
-console.log(`\n  Alteonx DockerFlow`);
+console.log(`\n  Flowteon`);
 console.log(`  → http://${HOST}:${PORT}`);
 console.log(`  → Mode: ${mode}`);
 console.log(`  → Auth: ${AUTH_TOKEN ? "enabled" : "disabled (localhost only)"}\n`);

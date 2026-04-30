@@ -1,7 +1,16 @@
 import Docker from "dockerode";
+import fs from "fs";
 import type { Service, Connection, LogLine } from "../shared/types";
 
-const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+const DOCKER_SOCKET = process.env.DOCKER_SOCKET || "/var/run/docker.sock";
+
+if (!fs.existsSync(DOCKER_SOCKET)) {
+  console.error(`\n  Error: Docker socket not found at ${DOCKER_SOCKET}`);
+  console.error(`  Make sure Docker is running or set DOCKER_SOCKET env var.\n`);
+  process.exit(1);
+}
+
+const docker = new Docker({ socketPath: DOCKER_SOCKET });
 
 export { docker };
 
@@ -191,6 +200,10 @@ export function streamContainerLogs(
   let stream: NodeJS.ReadableStream | null = null;
   let destroyed = false;
 
+  const destroyStream = (s: unknown) => {
+    if (s && typeof (s as any).destroy === "function") (s as any).destroy();
+  };
+
   container.logs({
     stdout: true,
     stderr: true,
@@ -198,16 +211,19 @@ export function streamContainerLogs(
     since: Math.floor(Date.now() / 1000),
     timestamps: true,
   }).then((s) => {
+    stream = s as unknown as NodeJS.ReadableStream;
+
     if (destroyed) {
-      if (s && typeof (s as any).destroy === "function") (s as any).destroy();
+      destroyStream(stream);
+      stream = null;
       return;
     }
-    stream = s as unknown as NodeJS.ReadableStream;
 
     // Docker multiplexed stream parsing for follow mode
     let buffer = Buffer.alloc(0);
 
     stream.on("data", (chunk: Buffer) => {
+      if (destroyed) return;
       buffer = Buffer.concat([buffer, chunk]);
 
       while (buffer.length >= 8) {
@@ -232,13 +248,16 @@ export function streamContainerLogs(
         });
       }
     });
-  }).catch(() => {});
+  }).catch((err) => {
+    console.error(`Failed to stream logs for ${id}:`, err);
+  });
 
   return {
     destroy() {
       destroyed = true;
-      if (stream && typeof (stream as any).destroy === "function") {
-        (stream as any).destroy();
+      if (stream) {
+        destroyStream(stream);
+        stream = null;
       }
     },
   };

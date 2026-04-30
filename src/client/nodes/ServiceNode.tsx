@@ -32,6 +32,10 @@ interface ServiceNodeData {
   project: string;
   stats: Stats | null;
   flash?: string;
+  id?: string;
+  particleGlow?: string;
+  activeHandles?: string[];
+  highlighted?: boolean;
   [key: string]: unknown;
 }
 
@@ -101,9 +105,9 @@ export const ServiceNode = memo(function ServiceNode({ data }: NodeProps) {
   const s = stateStyles[d.state] || stateStyles.exited;
   const { Icon, color: iconColor } = guessIcon(d.image, d.label);
   const flashClass = d.flash || "";
-  const particleGlow = (d as any).particleGlow || "";
-  const activeHandles = new Set<string>((d as any).activeHandles || []);
-  const highlighted = (d as any).highlighted;
+  const particleGlow = d.particleGlow || "";
+  const activeHandles = new Set<string>(d.activeHandles || []);
+  const highlighted = d.highlighted;
   const hdot = (id: string) => {
     if (activeHandles.has(id)) {
       return highlighted
@@ -118,7 +122,7 @@ export const ServiceNode = memo(function ServiceNode({ data }: NodeProps) {
 
   return (
     <div
-      title={`${d.label} (${d.state})\nImage: ${d.image}\nID: ${(d as any).id || ""}\nPorts: ${d.ports?.map((p) => `${p.host}:${p.container}`).join(", ") || "none"}`}
+      title={`${d.label} (${d.state})\nImage: ${d.image}\nID: ${d.id || ""}\nPorts: ${d.ports?.map((p) => `${p.host}:${p.container}`).join(", ") || "none"}`}
       className={`relative rounded-xl border border-slate-700/80 ${s.bg} backdrop-blur-sm
                   shadow-lg shadow-black/30 p-4 min-w-[220px] ring-2 ${particleGlow ? "" : s.ring}
                   transition-all duration-300 ${flashClass}`}

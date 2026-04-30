@@ -44,28 +44,41 @@ export function watchDockerEvents(onEvent: (event: DockerEvent) => void) {
       return;
     }
 
+    let buffer = "";
+
     stream.on("data", (chunk: Buffer) => {
-      try {
-        const event = JSON.parse(chunk.toString());
-        if (event.Type !== "container") return;
+      buffer += chunk.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || ""; // keep incomplete last line in buffer
 
-        const action = event.Action?.split(":")[0]; // "health_status: healthy" → "health_status"
-        if (!["start", "stop", "die", "restart", "health_status"].includes(action)) return;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
 
-        const svcName =
-          event.Actor?.Attributes?.["com.docker.compose.service"] ||
-          event.Actor?.Attributes?.name ||
-          "unknown";
-        const svcProject =
-          event.Actor?.Attributes?.["com.docker.compose.project"] ||
-          "standalone";
-        onEvent({
-          type: "docker",
-          action,
-          service: `${svcProject}/${svcName}`,
-          time: event.time || Date.now() / 1000,
-        });
-      } catch {}
+        try {
+          const event = JSON.parse(trimmed);
+          if (event.Type !== "container") continue;
+
+          const action = event.Action?.split(":")[0]; // "health_status: healthy" → "health_status"
+          if (!["start", "stop", "die", "restart", "health_status"].includes(action)) continue;
+
+          const svcName =
+            event.Actor?.Attributes?.["com.docker.compose.service"] ||
+            event.Actor?.Attributes?.name ||
+            "unknown";
+          const svcProject =
+            event.Actor?.Attributes?.["com.docker.compose.project"] ||
+            "standalone";
+          onEvent({
+            type: "docker",
+            action,
+            service: `${svcProject}/${svcName}`,
+            time: event.time || Date.now() / 1000,
+          });
+        } catch {
+          // Ignore malformed lines
+        }
+      }
     });
   });
 }

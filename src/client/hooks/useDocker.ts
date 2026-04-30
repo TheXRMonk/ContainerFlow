@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { Service, Connection, Stats, DockerEvent, LogLine, Flow, FlowSettings, WSMessage } from "../../shared/types";
 
-function arraysEqual<T extends { uid?: string; name?: string }>(a: T[], b: T[]): boolean {
+function arraysEqual(a: Service[], b: Service[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
-    if ((a[i] as any).uid !== (b[i] as any).uid) return false;
-    if ((a[i] as any).state !== (b[i] as any).state) return false;
+    if (a[i].uid !== b[i].uid) return false;
+    if (a[i].state !== b[i].state) return false;
   }
   return true;
 }
@@ -53,24 +53,38 @@ export function useDocker(token = "") {
     }
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const params = token ? `?token=${encodeURIComponent(token)}` : "";
-    const wsUrl = `${protocol}//${window.location.host}/ws${params}`;
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
-    ws.onopen = () => setConnected(true);
+    ws.onopen = () => {
+      if (token) {
+        ws.send(JSON.stringify({ type: "auth", token }));
+      } else {
+        setConnected(true);
+      }
+    };
     ws.onclose = () => {
       setConnected(false);
-      reconnectTimer.current = setTimeout(connect, 3000);
+      reconnectTimer.current = setTimeout(connect, 3_000);
     };
     ws.onerror = () => ws.close();
 
     ws.onmessage = (e) => {
       try {
-        const msg: WSMessage = JSON.parse(e.data);
+        const msg = JSON.parse(e.data);
 
-        switch (msg.type) {
+        if (msg.type === "auth_ok") {
+          setConnected(true);
+          return;
+        }
+        if (msg.type === "auth_error") {
+          ws.close();
+          return;
+        }
+
+        switch (msg.type as WSMessage["type"]) {
           case "services":
             setServices((prev) => arraysEqual(prev, msg.data) ? prev : msg.data);
             break;
@@ -112,7 +126,9 @@ export function useDocker(token = "") {
             for (const cb of particleSpawnCallbacks.current) cb(msg.data);
             break;
         }
-      } catch {}
+      } catch (err) {
+        console.error("Failed to parse WS message:", err);
+      }
     };
   }, [token]);
 
