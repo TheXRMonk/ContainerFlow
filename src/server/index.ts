@@ -139,21 +139,12 @@ function cleanupLogStream(ws: WebSocket) {
 }
 
 // ── Docker events ──
-watchDockerEvents((event) => {
-  broadcast({ type: "docker_event", data: event });
-});
-
-// ── Stats polling ──
-let lastServicesHash = "";
-let lastConnectionsHash = "";
-
-setInterval(async () => {
+async function refreshServices() {
   try {
     const services = await discoverServices(ALL, PROJECTS);
     const connections = await discoverConnections(services);
     const stats = await pollStats(services);
 
-    // Only send services/connections if changed
     const svcHash = services.map((s) => `${s.uid}:${s.state}`).join("|");
     if (svcHash !== lastServicesHash) {
       lastServicesHash = svcHash;
@@ -166,12 +157,55 @@ setInterval(async () => {
       broadcast({ type: "connections", data: connections });
     }
 
-    // Stats always change (cpu/mem fluctuate)
     broadcast({ type: "stats", data: stats });
   } catch (err) {
-    console.error("Poll error:", err);
+    console.error("Refresh error:", err);
   }
-}, POLL_INTERVAL_MS);
+}
+
+// Quick refresh — services + connections, no stats (fast)
+async function quickRefresh() {
+  try {
+    const services = await discoverServices(ALL, PROJECTS);
+    const svcHash = services.map((s) => `${s.uid}:${s.state}`).join("|");
+    if (svcHash !== lastServicesHash) {
+      lastServicesHash = svcHash;
+      broadcast({ type: "services", data: services });
+
+      // Also refresh connections when services change
+      const connections = await discoverConnections(services);
+      const connHash = connections.map((c) => `${c.from}:${c.to}`).join("|");
+      if (connHash !== lastConnectionsHash) {
+        lastConnectionsHash = connHash;
+        broadcast({ type: "connections", data: connections });
+      }
+    }
+  } catch {}
+}
+
+// Debounced refresh for Docker events
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleRefresh() {
+  clearTimeout(refreshTimer);
+  clearTimeout(retryTimer);
+  // First check at 1.5s, retry at 3.5s to catch stragglers (e.g. slow destroy)
+  refreshTimer = setTimeout(() => {
+    quickRefresh();
+    retryTimer = setTimeout(quickRefresh, 2000);
+  }, 1500);
+}
+
+watchDockerEvents((event) => {
+  broadcast({ type: "docker_event", data: event });
+  scheduleRefresh();
+});
+
+// ── Stats polling ──
+let lastServicesHash = "";
+let lastConnectionsHash = "";
+
+setInterval(refreshServices, POLL_INTERVAL_MS);
 
 // ── Start ──
 const server = Bun.serve({
@@ -199,6 +233,16 @@ const server = Bun.serve({
         if (flowsData.flows.length > 0) {
           try { native.send(JSON.stringify({ type: "flows", data: flowsData })); } catch {}
         }
+        // Send current services/connections/stats
+        discoverServices(ALL, PROJECTS).then(async (services) => {
+          const connections = await discoverConnections(services);
+          const stats = await pollStats(services);
+          try {
+            native.send(JSON.stringify({ type: "services", data: services }));
+            native.send(JSON.stringify({ type: "connections", data: connections }));
+            native.send(JSON.stringify({ type: "stats", data: stats }));
+          } catch {}
+        }).catch(() => {});
       }
     },
     close(ws) {
@@ -222,6 +266,16 @@ const server = Bun.serve({
             if (flowsData.flows.length > 0) {
               native.send(JSON.stringify({ type: "flows", data: flowsData }));
             }
+            // Send current services/connections/stats immediately
+            discoverServices(ALL, PROJECTS).then(async (services) => {
+              const connections = await discoverConnections(services);
+              const stats = await pollStats(services);
+              try {
+                native.send(JSON.stringify({ type: "services", data: services }));
+                native.send(JSON.stringify({ type: "connections", data: connections }));
+                native.send(JSON.stringify({ type: "stats", data: stats }));
+              } catch {}
+            }).catch(() => {});
           } else {
             native.send(JSON.stringify({ type: "auth_error" }));
             native.close();

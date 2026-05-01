@@ -269,61 +269,52 @@ function Dashboard({ token }: { token: string }) {
       initialLayoutDone.current = true;
     } else {
       setNodes((prev) => {
-        const updated = prev.map((n) => {
-          const u = newNodes.find((nn) => nn.id === n.id);
-          if (!u) return null;
-          return { ...n, data: u.data };
-        }).filter(Boolean) as Node[];
+        const newNodeMap = new Map(newNodes.map((n) => [n.id, n]));
+        const prevNodeMap = new Map(prev.map((n) => [n.id, n]));
 
-        const existingIds = new Set(updated.map((n) => n.id));
-        const brand = newNodes.filter((n) => !existingIds.has(n.id));
+        // 1. Update existing nodes (keep position, update data)
+        const result: Node[] = [];
+        for (const nn of newNodes) {
+          const existing = prevNodeMap.get(nn.id);
+          if (existing) {
+            // Keep position and style, update data
+            result.push({ ...existing, data: nn.data });
+          } else {
+            // New node — use saved position if available
+            const saved = savedPositions.current[nn.id];
+            result.push(saved ? { ...nn, position: saved } : nn);
+          }
+        }
+        // Nodes in prev but NOT in newNodes are simply dropped (they disappeared)
 
-        if (brand.length === 0) return updated;
-
-        const hasSaved = brand.some((n) => savedPositions.current[n.id]);
-        if (hasSaved) {
-          let positioned = brand.map((n) => {
-            const saved = savedPositions.current[n.id];
-            if (saved) return { ...n, position: saved };
-            return n;
-          });
-          positioned = positioned.map((n) => {
-            if (n.type !== "group") return n;
-            const kids = [...updated, ...positioned].filter((c) => c.parentId === n.id);
-            if (kids.length === 0) return n;
-            let maxRight = 0;
-            let maxBottom = 0;
-            for (const k of kids) {
-              maxRight = Math.max(maxRight, k.position.x + NODE_W + G_PAD);
-              maxBottom = Math.max(maxBottom, k.position.y + NODE_H + G_PAD);
-            }
-            const minW = NODE_W + G_PAD * 3;
-            const newW = Math.max(maxRight, minW);
-            const newH = Math.max(maxBottom, MIN_Y + NODE_H + G_PAD);
-            return { ...n, style: { ...n.style, width: newW, height: newH } };
-          });
-          return [...updated, ...positioned];
+        // 2. Resize groups to fit their children
+        for (let i = 0; i < result.length; i++) {
+          const n = result[i];
+          if (n.type !== "group") continue;
+          const kids = result.filter((c) => c.parentId === n.id);
+          if (kids.length === 0) continue;
+          let maxRight = 0;
+          let maxBottom = 0;
+          for (const k of kids) {
+            maxRight = Math.max(maxRight, k.position.x + NODE_W + G_PAD);
+            maxBottom = Math.max(maxBottom, k.position.y + NODE_H + G_PAD);
+          }
+          const minW = NODE_W + G_PAD * 3;
+          const newW = Math.max(maxRight, minW);
+          const newH = Math.max(maxBottom, MIN_Y + NODE_H + G_PAD);
+          result[i] = { ...n, style: { ...n.style, width: newW, height: newH } };
         }
 
-        let maxRightX = 0;
-        for (const n of updated) {
-          if (n.type === "group") {
-            const w = (n.style?.width as number) || NODE_W + G_PAD * 3;
-            maxRightX = Math.max(maxRightX, n.position.x + w);
+        // 3. Recompute edges
+        const { edges: updatedEdges, activeHandles } = computeEdges(result, filteredConnections);
+        setEdges(updatedEdges);
+        for (const n of result) {
+          if (n.type === "service") {
+            (n.data as any).activeHandles = activeHandles.get(n.id) || [];
           }
         }
 
-        const newGroups = brand.filter((n) => n.type === "group");
-        const offsetX = maxRightX > 0 ? maxRightX + 50 - (newGroups[0]?.position.x || 0) : 0;
-
-        const positioned = brand.map((n) => {
-          if (n.type === "group" && offsetX > 0) {
-            return { ...n, position: { x: n.position.x + offsetX, y: n.position.y } };
-          }
-          return n;
-        });
-
-        return [...updated, ...positioned];
+        return result;
       });
     }
   }, [filteredServices, filteredConnections, statsVersion]);
@@ -507,22 +498,24 @@ function Dashboard({ token }: { token: string }) {
           edgeTypes={edgeTypes}
           fitView
           fitViewOptions={{ padding: 0.3 }}
-          minZoom={0.2}
-          maxZoom={2.5}
+          minZoom={0.3}
+          maxZoom={1}
           panOnScroll={true}
+          translateExtent={[[-1000, -1000], [8000, 6000]]}
           proOptions={{ hideAttribution: true }}
         >
           <ParticleOverlay engine={engine} settings={flowSettings} onNodeHits={handleNodeHits} />
-          <Background color="#1e293b" gap={24} size={1} />
+          <Background color="#374151" gap={30} size={2} />
           <Controls position="bottom-left" />
           <EdgeLegend />
           <MiniMap
             position="bottom-right"
             nodeColor={(n) => {
+              if (n.type === "group") return "#1e293b";
               const state = (n.data as any)?.state;
-              if (state === "running") return "#22c55e";
-              if (state === "exited" || state === "dead") return "#ef4444";
-              return "#f59e0b";
+              if (state === "running") return "#22c55e80";
+              if (state === "exited" || state === "dead") return "#ef444480";
+              return "#f59e0b80";
             }}
             style={{ background: "#0f172a" }}
           />

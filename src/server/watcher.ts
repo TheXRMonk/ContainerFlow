@@ -60,7 +60,7 @@ export function watchDockerEvents(onEvent: (event: DockerEvent) => void) {
           if (event.Type !== "container") continue;
 
           const action = event.Action?.split(":")[0]; // "health_status: healthy" → "health_status"
-          if (!["start", "stop", "die", "restart", "health_status"].includes(action)) continue;
+          if (!["start", "stop", "die", "restart", "destroy", "create", "health_status"].includes(action)) continue;
 
           const svcName =
             event.Actor?.Attributes?.["com.docker.compose.service"] ||

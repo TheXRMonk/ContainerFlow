@@ -15,6 +15,7 @@
   background-color: #0f172a !important;
   border: 1px solid #1e293b !important;
   border-radius: 8px !important;
+  overflow: hidden !important;
 }
 
 .react-flow__controls {
@@ -27,6 +28,13 @@
   background-color: #1e293b !important;
   color: #94a3b8 !important;
   border-bottom: 1px solid #334155 !important;
+  width: 32px !important;
+  height: 32px !important;
+}
+
+.react-flow__controls-button svg {
+  width: 14px !important;
+  height: 14px !important;
 }
 
 .react-flow__controls-button:hover {
@@ -34,24 +42,35 @@
 }
 
 /* Flash animations for Docker events */
-@keyframes flash-green {
-  0%, 100% { box-shadow: 0 0 0 0 transparent; }
-  50% { box-shadow: 0 0 20px 4px rgba(34, 197, 94, 0.6); }
+@keyframes flash-border-green {
+  0% { border-color: #22c55e; box-shadow: 0 0 12px 2px rgba(34, 197, 94, 0.4); }
+  100% { border-color: rgba(51, 65, 85, 0.8); box-shadow: none; }
 }
 
-@keyframes flash-red {
-  0%, 100% { box-shadow: 0 0 0 0 transparent; }
-  50% { box-shadow: 0 0 20px 4px rgba(239, 68, 68, 0.6); }
+@keyframes flash-border-red {
+  0% { border-color: #ef4444; box-shadow: 0 0 12px 2px rgba(239, 68, 68, 0.4); }
+  100% { border-color: #ef4444; box-shadow: none; }
 }
 
-@keyframes flash-yellow {
-  0%, 100% { box-shadow: 0 0 0 0 transparent; }
-  50% { box-shadow: 0 0 20px 4px rgba(245, 158, 11, 0.6); }
+@keyframes flash-border-yellow {
+  0% { border-color: #f59e0b; box-shadow: 0 0 12px 2px rgba(245, 158, 11, 0.4); }
+  100% { border-color: rgba(51, 65, 85, 0.8); box-shadow: none; }
 }
 
-.flash-start { animation: flash-green 0.6s ease-out; }
-.flash-stop { animation: flash-red 0.6s ease-out; }
-.flash-restart { animation: flash-yellow 0.6s ease-out 2; }
+.flash-start { animation: flash-border-green 1.2s ease-out; }
+.flash-stop { animation: flash-border-red 1.2s ease-out forwards; }
+.flash-restart { animation: flash-border-yellow 1.2s ease-out 2; }
+
+/* Fade out animation for removed nodes */
+@keyframes node-fade-out {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.95); }
+}
+
+.node-removing {
+  animation: node-fade-out 0.8s ease-out forwards;
+  pointer-events: none;
+}
 
 /* Log panel slide-up */
 @keyframes slideUp {

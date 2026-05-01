@@ -39,12 +39,12 @@ interface ServiceNodeData {
   [key: string]: unknown;
 }
 
-const stateStyles: Record<string, { ring: string; dot: string; bg: string }> = {
-  running: { ring: "ring-emerald-500/50", dot: "bg-emerald-500", bg: "bg-emerald-500/10" },
-  exited: { ring: "ring-red-500/50", dot: "bg-red-500", bg: "bg-red-500/10" },
-  paused: { ring: "ring-amber-500/50", dot: "bg-amber-500", bg: "bg-amber-500/10" },
-  restarting: { ring: "ring-amber-500/50", dot: "bg-amber-500", bg: "bg-amber-500/10" },
-  dead: { ring: "ring-red-500/50", dot: "bg-red-500", bg: "bg-red-500/10" },
+const stateStyles: Record<string, { ring: string; dot: string; bg: string; border: string }> = {
+  running: { ring: "ring-emerald-500/50", dot: "bg-emerald-500", bg: "bg-emerald-500/10", border: "border-slate-700/80" },
+  exited: { ring: "ring-red-500/50", dot: "bg-red-500", bg: "bg-red-500/10", border: "border-red-500/60" },
+  paused: { ring: "ring-amber-500/50", dot: "bg-amber-500", bg: "bg-amber-500/10", border: "border-amber-500/60" },
+  restarting: { ring: "ring-amber-500/50", dot: "bg-amber-500", bg: "bg-amber-500/10", border: "border-amber-500/60" },
+  dead: { ring: "ring-red-500/50", dot: "bg-red-500", bg: "bg-red-500/10", border: "border-red-500/60" },
 };
 
 // Map image/name patterns to Lucide icons and colors
@@ -123,7 +123,7 @@ export const ServiceNode = memo(function ServiceNode({ data }: NodeProps) {
   return (
     <div
       title={`${d.label} (${d.state})\nImage: ${d.image}\nID: ${d.id || ""}\nPorts: ${d.ports?.map((p) => `${p.host}:${p.container}`).join(", ") || "none"}`}
-      className={`relative rounded-xl border border-slate-700/80 ${s.bg} backdrop-blur-sm
+      className={`relative rounded-xl border ${s.border} ${s.bg} backdrop-blur-sm
                   shadow-lg shadow-black/30 p-4 min-w-[220px] ring-2 ${particleGlow ? "" : s.ring}
                   transition-all duration-300 ${flashClass}`}
       style={particleGlow ? {
@@ -153,28 +153,28 @@ export const ServiceNode = memo(function ServiceNode({ data }: NodeProps) {
         <Handle key={`rt${i}`} type="target" position={Position.Right} id={`right-${i}-target`} className={hdot(`right-${i}`)} style={{ top: o, transform: "translate(50%, -50%)" }} />
       ))}
 
-      {/* Header: icon + name + status dot */}
-      <div className="flex items-center gap-2.5 mb-2">
+      {/* Top section: icon left, name + image right */}
+      <div className="flex gap-3 mb-2">
         <div
-          className="flex items-center justify-center w-8 h-8 rounded-lg"
+          className="flex items-center justify-center w-9 h-9 rounded-lg shrink-0 self-center"
           style={{ backgroundColor: `${iconColor}22` }}
         >
-          <Icon size={18} style={{ color: iconColor }} />
+          <Icon size={20} style={{ color: iconColor }} />
         </div>
-        <span className="font-bold text-white text-sm truncate">{d.label}</span>
-        <div
-          className={`w-2 h-2 rounded-full shrink-0 ${s.dot}
-                     ${d.state === "running" ? "animate-pulse" : ""}`}
-        />
-        <div className="flex-1" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-white text-sm truncate">{d.label}</span>
+            <div className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
+          </div>
+          <div className="text-xs text-slate-500 truncate mt-0.5">
+            {d.image.startsWith("sha256:") ? `Sin Tag (${d.image.slice(7, 19)})` : d.image}
+          </div>
+        </div>
       </div>
-
-      {/* Image */}
-      <div className="text-xs text-slate-500 truncate mb-2 pl-10">{d.image}</div>
 
       {/* Ports */}
       {d.ports?.length > 0 && (
-        <div className="flex gap-1.5 flex-wrap mb-2 pl-10">
+        <div className="flex gap-1.5 flex-wrap mb-2">
           {d.ports.map((p) => (
             <span
               key={`${p.host}:${p.container}`}

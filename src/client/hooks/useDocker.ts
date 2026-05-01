@@ -90,7 +90,8 @@ export function useDocker(token = "") {
             break;
           case "connections":
             setConnections((prev) => {
-              if (prev.length === msg.data.length) return prev;
+              if (prev.length === msg.data.length &&
+                  prev.every((c: any, i: number) => c.from === msg.data[i].from && c.to === msg.data[i].to)) return prev;
               return msg.data;
             });
             break;
