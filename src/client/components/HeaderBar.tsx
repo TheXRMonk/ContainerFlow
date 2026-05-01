@@ -49,7 +49,7 @@ export function HeaderBar({
   }, []);
 
   return (
-    <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-sm relative z-[9999]">
+    <div className="flex items-center justify-between px-5 py-3.5 bg-slate-900/90 backdrop-blur-sm relative z-[9999]">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2.5">
           <img

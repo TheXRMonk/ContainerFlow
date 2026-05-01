@@ -1,0 +1,554 @@
+import { useEffect, useRef, useState, useCallback } from "react";
+import { X, Pause, Play, Terminal, Network, Globe, Info, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check } from "lucide-react";
+import type { Service, Stats, LogLine, WSMessage, Connection } from "../../shared/types";
+
+type Tab = "info" | "config" | "env" | "stats";
+
+const SYSTEM_ENV_KEYS = new Set([
+  "PATH", "HOME", "HOSTNAME", "TERM", "SHLVL", "PWD", "OLDPWD",
+  "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "LC_MESSAGES", "LC_COLLATE",
+  "DEBIAN_FRONTEND", "GPG_KEY", "GPG_KEYS",
+  "PYTHON_VERSION", "PYTHON_PIP_VERSION", "PYTHON_SETUPTOOLS_VERSION",
+  "PYTHON_GET_PIP_URL", "PYTHON_GET_PIP_SHA256", "PYTHON_SHA256",
+  "NODE_VERSION", "YARN_VERSION", "NPM_CONFIG_LOGLEVEL",
+  "JAVA_HOME", "JAVA_VERSION", "GOPATH", "GOVERSION",
+  "PHPIZE_DEPS", "PHP_VERSION", "PHP_INI_DIR",
+  "RUBY_VERSION", "GEM_HOME", "BUNDLE_PATH",
+  "NGINX_VERSION", "NJS_VERSION",
+  "REDIS_VERSION", "REDIS_DOWNLOAD_URL", "REDIS_DOWNLOAD_SHA",
+  "PGDATA", "PG_MAJOR", "PG_VERSION", "PG_SHA256",
+  "MYSQL_MAJOR", "MYSQL_VERSION", "MYSQL_SHELL_VERSION",
+  "MONGO_VERSION", "MONGO_MAJOR", "MONGO_PACKAGE", "MONGO_REPO",
+]);
+
+const TABS: { id: Tab; label: string; icon: typeof Info }[] = [
+  { id: "info", label: "Info", icon: Info },
+  { id: "stats", label: "Stats", icon: Activity },
+  { id: "env", label: "Env", icon: Variable },
+  { id: "config", label: "Config", icon: Settings },
+];
+
+interface DetailPanelProps {
+  service: Service;
+  stats?: Stats;
+  logLines: LogLine[];
+  token: string;
+  closing?: boolean;
+  onClose: () => void;
+  sendMessage: (msg: WSMessage) => void;
+  clearLogLines: () => void;
+  connections: Connection[];
+  services: Service[];
+}
+
+export function DetailPanel({ service, stats, logLines, token, closing, onClose, sendMessage, clearLogLines, connections, services }: DetailPanelProps) {
+  const [initialLogs, setInitialLogs] = useState<LogLine[]>([]);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const subscribedRef = useRef<string | null>(null);
+  const [visible, setVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>("info");
+  const [logsExpanded, setLogsExpanded] = useState(false);
+  const [envVisibleAll, setEnvVisibleAll] = useState(false);
+  const [envVisibleSet, setEnvVisibleSet] = useState<Set<number>>(new Set());
+  const [copiedEnvIdx, setCopiedEnvIdx] = useState<number | null>(null);
+
+  // Slide-in animation
+  useEffect(() => {
+    requestAnimationFrame(() => setVisible(true));
+  }, []);
+
+  // React to external close (pane click)
+  useEffect(() => {
+    if (closing) setVisible(false);
+  }, [closing]);
+
+  // Slide-out then unmount
+  const handleClose = useCallback(() => {
+    setVisible(false);
+    setTimeout(() => onClose(), 300);
+  }, [onClose]);
+
+  // Fetch initial logs + subscribe
+  useEffect(() => {
+    setInitialLogs([]);
+    setLoading(true);
+    clearLogLines();
+
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    fetch(`/api/logs/${service.id}?tail=200`, { headers })
+      .then((r) => r.ok ? r.json() : [])
+      .then((lines: LogLine[]) => {
+        setInitialLogs(lines);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+
+    sendMessage({ type: "subscribe_logs", container: service.id });
+    subscribedRef.current = service.id;
+
+    return () => {
+      if (subscribedRef.current) {
+        sendMessage({ type: "unsubscribe_logs" });
+        subscribedRef.current = null;
+      }
+    };
+  }, [service.id, token, sendMessage, clearLogLines]);
+
+  // Auto-scroll
+  useEffect(() => {
+    if (autoScroll && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [initialLogs, logLines, autoScroll]);
+
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    const atBottom = scrollHeight - scrollTop - clientHeight < 40;
+    setAutoScroll(atBottom);
+  }, []);
+
+  const allLines = [...initialLogs, ...logLines.filter((l) => l.container === service.id)];
+
+  const stateColor =
+    service.state === "running" ? "text-emerald-400" :
+    service.state === "exited" || service.state === "dead" ? "text-red-400" :
+    "text-yellow-400";
+
+  const stateDot =
+    service.state === "running" ? "bg-emerald-400" :
+    service.state === "exited" || service.state === "dead" ? "bg-red-400" :
+    "bg-yellow-400";
+
+  return (
+    <div
+      className={`absolute top-0 left-0 bottom-0 w-[900px] bg-slate-900/95 backdrop-blur-sm border-r border-slate-700/60 flex flex-col z-50 rounded-l-xl transition-transform duration-300 ease-out ${visible ? "translate-x-0" : "-translate-x-full"}`}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <span className={`w-2 h-2 rounded-full ${stateDot}`} />
+          <span className="text-sm font-semibold text-white truncate">{service.name}</span>
+          <span className={`text-xs font-mono ${stateColor}`}>{service.state}</span>
+        </div>
+        <button
+          onClick={handleClose}
+          className="p-1.5 rounded hover:bg-slate-700/60 text-slate-400 hover:text-slate-200 transition-colors"
+          title="Close"
+        >
+          <X size={14} />
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex items-center border-b border-slate-800 shrink-0">
+        {TABS.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => { setActiveTab(tab.id); setLogsExpanded(false); }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium relative transition-colors ${
+                isActive ? "text-cyan-400" : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              <Icon size={12} />
+              {tab.label}
+              <span className={`absolute bottom-0 left-0 right-0 h-px bg-cyan-400 transition-transform duration-300 ease-out origin-center ${isActive ? "scale-x-100" : "scale-x-0"}`} />
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab content + Logs below */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        {/* Tab content area */}
+        <div style={{ flexBasis: logsExpanded ? "0px" : "75%", flexShrink: 0, transition: "flex-basis 300ms ease-in-out, padding 300ms ease-in-out" }} className={`overflow-hidden ${logsExpanded ? "" : "overflow-y-auto"}`}>
+          {/* Info tab */}
+          {activeTab === "info" && (
+            <div className="px-4 py-3 space-y-3">
+              {service.status && (
+                <DetailRow label="Status" value={service.status} />
+              )}
+              <DetailRow label="Image" value={service.image} mono />
+              <DetailRow label="Container" value={service.id.slice(0, 12)} mono />
+              <DetailRow label="Project" value={service.project} />
+              {service.compose_file && (
+                <DetailRow label="Compose" value={service.compose_file} mono />
+              )}
+
+              {service.ports.length > 0 && (
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">Ports</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {service.ports.map((p, i) => (
+                      <span key={i} className="inline-flex items-center gap-1.5 text-sm font-mono bg-slate-800/80 text-cyan-300 px-2.5 py-1 rounded">
+                        <Globe size={13} className="text-slate-500" />
+                        {p.host} → {p.container}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {service.networks.length > 0 && (
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">Networks</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {service.networks.map((n, i) => (
+                      <span key={i} className="inline-flex items-center gap-1.5 text-sm font-mono bg-slate-800/80 text-purple-300 px-2.5 py-1 rounded">
+                        <Network size={13} className="text-slate-500" />
+                        {n}
+                        {service.network_ips?.[n] && (
+                          <span className="text-slate-500 ml-1">{service.network_ips[n]}</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Connected services */}
+              {(() => {
+                const connectedUids = new Set<string>();
+                for (const c of connections) {
+                  if (c.from === service.uid) connectedUids.add(c.to);
+                  if (c.to === service.uid) connectedUids.add(c.from);
+                }
+                const connectedSvcs = services.filter((s) => connectedUids.has(s.uid));
+                if (connectedSvcs.length === 0) return null;
+                return (
+                  <div>
+                    <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">Connected to</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {connectedSvcs.map((s) => {
+                        const dotColor = s.state === "running" ? "bg-emerald-400" : s.state === "exited" || s.state === "dead" ? "bg-red-400" : "bg-yellow-400";
+                        return (
+                          <span key={s.uid} className="inline-flex items-center gap-1.5 text-sm bg-slate-800/80 text-slate-300 px-2.5 py-1 rounded">
+                            <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+                            {s.name}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+        {/* Config tab */}
+        {activeTab === "config" && (
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+            {/* Restart policy */}
+            {service.restart_policy && (
+              <DetailRow label="Restart Policy" value={service.restart_policy} />
+            )}
+
+            {/* Resource limits */}
+            <div>
+              <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">Resource Limits</span>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-slate-800/80 rounded px-3 py-2">
+                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block">Memory Limit</span>
+                  <span className="text-xs font-mono text-slate-200">
+                    {service.memory_limit > 0
+                      ? `${(service.memory_limit / 1024 / 1024).toFixed(0)} MB`
+                      : "Unlimited"}
+                  </span>
+                </div>
+                <div className="bg-slate-800/80 rounded px-3 py-2">
+                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block">CPU Quota</span>
+                  <span className="text-xs font-mono text-slate-200">
+                    {service.cpu_quota > 0
+                      ? `${(service.cpu_quota / 1000).toFixed(0)}%`
+                      : "Unlimited"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Health check */}
+            <div>
+              <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">Health Check</span>
+              {service.health_status ? (
+                <div className="space-y-2">
+                  <span className={`inline-flex items-center gap-1.5 text-xs font-mono px-2 py-0.5 rounded ${
+                    service.health_status === "healthy" ? "bg-emerald-900/40 text-emerald-400" :
+                    service.health_status === "unhealthy" ? "bg-red-900/40 text-red-400" :
+                    "bg-yellow-900/40 text-yellow-400"
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      service.health_status === "healthy" ? "bg-emerald-400" :
+                      service.health_status === "unhealthy" ? "bg-red-400" :
+                      "bg-yellow-400"
+                    }`} />
+                    {service.health_status}
+                  </span>
+                  {service.health_log.length > 0 && (
+                    <div className="bg-slate-800/60 rounded p-2 space-y-0.5">
+                      <span className="text-[10px] text-slate-500 block mb-1">Recent checks</span>
+                      {service.health_log.map((entry, i) => (
+                        <div key={i} className="text-[11px] font-mono text-slate-400 break-all">{entry}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <span className="text-xs text-slate-500">Not configured</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Env tab */}
+        {activeTab === "env" && (() => {
+          const filteredEnv = (service.env || []).filter((entry) => {
+            const key = entry.split("=")[0];
+            return !SYSTEM_ENV_KEYS.has(key);
+          });
+          return (
+          <div className="flex-1 overflow-y-auto px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] uppercase tracking-wider text-slate-500">{filteredEnv.length} variables</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => {
+                    const text = filteredEnv.join("\n");
+                    try {
+                      navigator.clipboard.writeText(text);
+                    } catch {
+                      const ta = document.createElement("textarea");
+                      ta.value = text;
+                      ta.style.position = "fixed";
+                      ta.style.opacity = "0";
+                      document.body.appendChild(ta);
+                      ta.select();
+                      document.execCommand("copy");
+                      document.body.removeChild(ta);
+                    }
+                    setCopiedEnvIdx(-1);
+                    setTimeout(() => setCopiedEnvIdx(null), 1500);
+                  }}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                >
+                  {copiedEnvIdx === -1 ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                  {copiedEnvIdx === -1 ? "Copied!" : "Copy all"}
+                </button>
+                <button
+                  onClick={() => { setEnvVisibleAll((v) => !v); setEnvVisibleSet(new Set()); }}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                >
+                  {envVisibleAll ? <EyeOff size={11} /> : <Eye size={11} />}
+                  {envVisibleAll ? "Hide all" : "Show all"}
+                </button>
+              </div>
+            </div>
+            {filteredEnv.length > 0 ? (
+              <div className="space-y-0.5">
+                {filteredEnv.map((entry, i) => {
+                  const eqIdx = entry.indexOf("=");
+                  const key = eqIdx >= 0 ? entry.slice(0, eqIdx) : entry;
+                  const val = eqIdx >= 0 ? entry.slice(eqIdx + 1) : "";
+                  return (
+                    <div key={i} className="group flex items-center gap-0 font-mono text-xs py-1.5 hover:bg-slate-800/40 rounded px-1">
+                      {(() => {
+                        const isVisible = envVisibleAll || envVisibleSet.has(i);
+                        return (
+                          <>
+                            <span className="text-cyan-400 shrink-0">{key}</span>
+                            <span className="text-slate-600 mx-1">=</span>
+                            <span className={`break-all flex-1 ${isVisible ? "text-slate-300" : "text-slate-600 select-none"}`}>
+                              {isVisible ? val : "••••••••"}
+                            </span>
+                            <button
+                              onClick={() => setEnvVisibleSet((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(i)) next.delete(i); else next.add(i);
+                                return next;
+                              })}
+                              className="shrink-0 ml-2 p-1 rounded opacity-0 group-hover:opacity-100 text-slate-500 hover:text-slate-200 transition-opacity"
+                              title={isVisible ? "Hide" : "Show"}
+                            >
+                              {isVisible ? <EyeOff size={15} /> : <Eye size={15} />}
+                            </button>
+                            <button
+                              onClick={() => {
+                                try {
+                                  navigator.clipboard.writeText(entry);
+                                } catch {
+                                  // Fallback for non-HTTPS
+                                  const ta = document.createElement("textarea");
+                                  ta.value = entry;
+                                  ta.style.position = "fixed";
+                                  ta.style.opacity = "0";
+                                  document.body.appendChild(ta);
+                                  ta.select();
+                                  document.execCommand("copy");
+                                  document.body.removeChild(ta);
+                                }
+                                setCopiedEnvIdx(i);
+                                setTimeout(() => setCopiedEnvIdx(null), 1500);
+                              }}
+                              className="shrink-0 ml-1 p-1 rounded opacity-0 group-hover:opacity-100 text-slate-500 hover:text-slate-200 transition-opacity"
+                              title="Copy"
+                            >
+                              {copiedEnvIdx === i ? <Check size={15} className="text-emerald-400" /> : <Copy size={15} />}
+                            </button>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-slate-500 text-sm text-center py-8">No environment variables available</div>
+            )}
+          </div>
+          );
+        })()}
+
+        {/* Stats tab */}
+        {activeTab === "stats" && (
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+            {stats ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <StatCard label="CPU" value={`${stats.cpu.toFixed(1)}%`} color={stats.cpu > 80 ? "text-red-400" : stats.cpu > 50 ? "text-yellow-400" : "text-emerald-400"} />
+                  <StatCard label="Memory" value={`${stats.mem_mb.toFixed(0)} MB`} extra={`${stats.mem_percent.toFixed(1)}%`} color={stats.mem_percent > 80 ? "text-red-400" : stats.mem_percent > 50 ? "text-yellow-400" : "text-emerald-400"} />
+                </div>
+
+                {/* CPU bar */}
+                <div>
+                  <div className="flex justify-between text-xs text-slate-500 mb-1">
+                    <span>CPU Usage</span>
+                    <span>{stats.cpu.toFixed(1)}%</span>
+                  </div>
+                  <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${stats.cpu > 80 ? "bg-red-500" : stats.cpu > 50 ? "bg-yellow-500" : "bg-emerald-500"}`}
+                      style={{ width: `${Math.min(stats.cpu, 100)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Memory bar */}
+                <div>
+                  <div className="flex justify-between text-xs text-slate-500 mb-1">
+                    <span>Memory Usage</span>
+                    <span>{stats.mem_mb.toFixed(0)} MB ({stats.mem_percent.toFixed(1)}%)</span>
+                  </div>
+                  <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${stats.mem_percent > 80 ? "bg-red-500" : stats.mem_percent > 50 ? "bg-yellow-500" : "bg-emerald-500"}`}
+                      style={{ width: `${Math.min(stats.mem_percent, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="text-slate-500 text-sm text-center py-8">No stats available</div>
+            )}
+          </div>
+        )}
+
+        </div>
+
+        {/* Logs section — always visible at bottom */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          {/* Expand/collapse divider */}
+          <div className="relative shrink-0">
+            <div className="border-t border-slate-700/60" />
+            <div className="absolute inset-x-0 -top-3 flex justify-center">
+              <button
+                onClick={() => setLogsExpanded((v) => !v)}
+                className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-slate-800 border border-slate-700/60 text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors text-[10px] font-medium"
+                title={logsExpanded ? "Collapse logs" : "Expand logs"}
+              >
+                {logsExpanded ? <ChevronDown size={10} /> : <ChevronUp size={10} />}
+                {logsExpanded ? "Collapse" : "Expand"}
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center justify-between px-4 py-2 shrink-0">
+            <div className="flex items-center gap-2">
+              <Terminal size={14} className="text-cyan-400" />
+              <span className="text-sm font-medium text-slate-300">Logs</span>
+              {service.state === "running" && subscribedRef.current && (
+                <span className="flex items-center gap-1 text-[10px] text-cyan-400">
+                  <span className="w-1 h-1 rounded-full bg-cyan-400 animate-pulse" />
+                  live
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setAutoScroll((v) => !v)}
+              className="p-1 rounded hover:bg-slate-700/60 text-slate-400 hover:text-slate-200 transition-colors"
+              title={autoScroll ? "Pause auto-scroll" : "Resume auto-scroll"}
+            >
+              {autoScroll ? <Pause size={12} /> : <Play size={12} />}
+            </button>
+          </div>
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto overflow-x-hidden font-mono text-xs leading-5 px-3 py-2"
+          >
+            {loading && (
+              <div className="text-slate-500 py-4 text-center">Loading logs...</div>
+            )}
+            {!loading && allLines.length === 0 && (
+              <div className="text-slate-500 py-4 text-center">No logs available</div>
+            )}
+            {allLines.map((l, i) => (
+              <div key={i} className="flex gap-0 hover:bg-slate-800/40">
+                {l.timestamp && (
+                  <span className="text-slate-600 shrink-0 select-none pr-2 whitespace-nowrap">
+                    {formatTimestamp(l.timestamp)}
+                  </span>
+                )}
+                <span className={`whitespace-pre-wrap break-all ${l.stream === "stderr" ? "text-red-400" : "text-slate-300"}`}>
+                  {l.line}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div>
+      <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-0.5">{label}</span>
+      <span className={`text-sm text-slate-200 ${mono ? "font-mono" : ""} break-all`}>{value}</span>
+    </div>
+  );
+}
+
+function StatCard({ label, value, extra, color }: { label: string; value: string; extra?: string; color: string }) {
+  return (
+    <div className="bg-slate-800/80 rounded-lg px-4 py-3">
+      <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">{label}</span>
+      <span className={`text-xl font-mono font-semibold ${color}`}>{value}</span>
+      {extra && <span className="text-xs text-slate-500 ml-2">{extra}</span>}
+    </div>
+  );
+}
+
+function formatTimestamp(ts: string): string {
+  try {
+    const d = new Date(ts);
+    return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  } catch {
+    return ts.slice(11, 19);
+  }
+}

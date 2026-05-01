@@ -7,8 +7,15 @@ export interface Service {
   status: string;
   ports: { host: number; container: number }[];
   networks: string[];
+  network_ips: Record<string, string>;
   project: string;
   compose_file: string;
+  env: string[];
+  restart_policy: string;
+  memory_limit: number;
+  cpu_quota: number;
+  health_status: string;
+  health_log: string[];
 }
 
 export interface Connection {

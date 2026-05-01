@@ -17,9 +17,34 @@ export { docker };
 export async function discoverServices(all: boolean, projects: string[]): Promise<Service[]> {
   const containers = await docker.listContainers({ all: true });
 
-  let services: Service[] = containers.map((c) => {
+  // Inspect containers in parallel to get detailed info
+  const inspections = await Promise.all(
+    containers.map((c) =>
+      docker.getContainer(c.Id).inspect().catch(() => null)
+    )
+  );
+
+  let services: Service[] = containers.map((c, i) => {
     const name = c.Labels["com.docker.compose.service"] || c.Names[0]?.replace("/", "") || "unknown";
     const project = c.Labels["com.docker.compose.project"] || "standalone";
+    const info = inspections[i] as any;
+
+    // Extract network IPs
+    const networkIps: Record<string, string> = {};
+    const nets = info?.NetworkSettings?.Networks || {};
+    for (const [netName, netInfo] of Object.entries(nets)) {
+      const ip = (netInfo as any)?.IPAddress;
+      if (ip) networkIps[netName] = ip;
+    }
+
+    // Health check
+    const healthState = info?.State?.Health;
+    const healthStatus = healthState?.Status || "";
+    const healthLog = (healthState?.Log || [])
+      .slice(-5)
+      .map((entry: any) => `[${entry.ExitCode}] ${entry.Output?.trim() || ""}`)
+      .filter((s: string) => s.length > 4);
+
     return {
       id: c.Id.slice(0, 12),
       uid: `${project}/${name}`,
@@ -34,8 +59,15 @@ export async function discoverServices(all: boolean, projects: string[]): Promis
         ])
       ).values()],
       networks: Object.keys(c.NetworkSettings?.Networks || {}),
+      network_ips: networkIps,
       project,
       compose_file: c.Labels["com.docker.compose.project.config_files"] || "",
+      env: (info?.Config?.Env || []) as string[],
+      restart_policy: info?.HostConfig?.RestartPolicy?.Name || "",
+      memory_limit: info?.HostConfig?.Memory || 0,
+      cpu_quota: info?.HostConfig?.CpuQuota || 0,
+      health_status: healthStatus,
+      health_log: healthLog,
     };
   });
 

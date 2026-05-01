@@ -18,7 +18,7 @@ import { useDocker } from "./hooks/useDocker";
 import { buildLayout, computeEdges, NODE_WIDTH, NODE_HEIGHT, GROUP_PADDING, GROUP_HEADER } from "./engine/layout";
 import { ParticleEngine } from "./engine/particles";
 import { ParticleOverlay } from "./components/ParticleOverlay";
-import { LogPanel } from "./panels/LogPanel";
+import { DetailPanel } from "./panels/DetailPanel";
 import { LoginScreen } from "./components/LoginScreen";
 import { OffsetEdge } from "./components/OffsetEdge";
 import { HeaderBar } from "./components/HeaderBar";
@@ -83,8 +83,10 @@ function Dashboard({ token }: { token: string }) {
   const savedPositions = useRef<Record<string, { x: number; y: number }>>({});
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(loadFilter);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [logPanelService, setLogPanelService] = useState<Service | null>(null);
+  const [detailService, setDetailService] = useState<Service | null>(null);
   const reactFlowRef = useRef<any>(null);
+  const prevViewport = useRef<{ x: number; y: number; zoom: number } | null>(null);
+  const isDragging = useRef(false);
 
   const NODE_W = NODE_WIDTH;
   const NODE_H = NODE_HEIGHT;
@@ -92,14 +94,21 @@ function Dashboard({ token }: { token: string }) {
   const MIN_X = G_PAD;
   const MIN_Y = GROUP_HEADER + G_PAD;
 
-  // Fit view when log panel opens/closes
-  useEffect(() => {
-    if (reactFlowRef.current) {
-      setTimeout(() => {
-        reactFlowRef.current?.fitView({ padding: 0.3, duration: 300 });
-      }, 50);
+  // Close detail panel and restore viewport (with slide-out delay)
+  const [panelClosing, setPanelClosing] = useState(false);
+  const closeDetail = useCallback(() => {
+    if (panelClosing) return;
+    setPanelClosing(true);
+    if (prevViewport.current && reactFlowRef.current) {
+      reactFlowRef.current.setViewport(prevViewport.current, { duration: 500 });
+      prevViewport.current = null;
     }
-  }, [logPanelService]);
+    setSelectedNode(null);
+    setTimeout(() => {
+      setDetailService(null);
+      setPanelClosing(false);
+    }, 300);
+  }, [panelClosing]);
 
   // Load saved positions
   useEffect(() => {
@@ -422,44 +431,32 @@ function Dashboard({ token }: { token: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredServices, statsVersion]);
 
-  // Edge/node highlighting
-  const connectedNodeIds = useMemo(() => {
-    if (!selectedNode) return null;
-    const ids = new Set<string>([selectedNode]);
-    for (const e of edges) {
-      if (e.source === selectedNode) ids.add(e.target);
-      if (e.target === selectedNode) ids.add(e.source);
-    }
-    return ids;
-  }, [selectedNode, edges]);
-
-  const styledEdges = useMemo(() => {
-    if (!selectedNode) return edges;
-    return edges.map((e) => {
-      const isConnected = e.source === selectedNode || e.target === selectedNode;
-      return {
-        ...e,
-        style: { ...e.style, opacity: isConnected ? 1 : 0.08, strokeWidth: isConnected ? 2.5 : 1 },
-      };
-    });
-  }, [edges, selectedNode]);
-
-  const styledNodes = useMemo(() => {
-    if (!connectedNodeIds) return nodes;
+  // Dim nodes/edges when detail panel is open
+  const dimmedNodes = useMemo(() => {
+    if (!selectedNode) return nodes;
     return nodes.map((n) => {
       if (n.type !== "service") return n;
-      const isConnected = connectedNodeIds.has(n.id);
       const isSelected = n.id === selectedNode;
       return {
         ...n,
-        style: { ...n.style, opacity: isConnected ? 1 : 0.3 },
-        data: { ...n.data, highlighted: isSelected || isConnected },
+        style: { ...n.style, opacity: isSelected ? 1 : 0.25, transition: "opacity 0.4s ease" },
+        data: { ...n.data, activeHandles: [] },
       };
     });
-  }, [nodes, connectedNodeIds, selectedNode]);
+  }, [nodes, selectedNode]);
+
+  const dimmedEdges = useMemo(() => {
+    if (!selectedNode) return edges;
+    return edges.map((e) => ({
+      ...e,
+      style: { ...e.style, opacity: 0.1, transition: "opacity 0.4s ease" },
+      label: undefined,
+      labelStyle: { opacity: 0 },
+    }));
+  }, [edges, selectedNode]);
 
   return (
-    <div className="h-screen w-screen bg-slate-950 flex flex-col">
+    <div className="h-screen w-screen bg-slate-900 flex flex-col">
       <HeaderBar
         services={services}
         filteredServices={filteredServices}
@@ -475,25 +472,54 @@ function Dashboard({ token }: { token: string }) {
         onSimulate={handleSimulate}
       />
 
-      {/* Canvas */}
-      <div className="flex-1 min-h-0">
+      {/* Canvas — inset */}
+      <div className="flex-1 min-h-0 relative m-2 rounded-xl overflow-hidden ring-1 ring-slate-700/60 shadow-[inset_0_2px_12px_rgba(0,0,0,0.5)]">
         <ReactFlow
           onInit={(instance) => { reactFlowRef.current = instance; }}
-          nodes={styledNodes}
-          edges={styledEdges}
+          nodes={dimmedNodes}
+          edges={dimmedEdges}
           onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
+          onNodeDragStart={() => { isDragging.current = true; }}
+          onNodeDragStop={() => { isDragging.current = false; }}
           onNodeClick={(_e, node) => {
-            if (node.type === "service") {
-              setSelectedNode(node.id);
-              const svc = filteredServices.find((s) => s.uid === node.id);
-              if (svc) setLogPanelService(svc);
-            } else {
-              setSelectedNode(null);
+            if (isDragging.current) return;
+            if (node.type !== "service") return;
+
+            const svc = filteredServices.find((s) => s.uid === node.id);
+            if (!svc) return;
+
+            // Save current viewport before zooming
+            if (reactFlowRef.current && !prevViewport.current) {
+              prevViewport.current = reactFlowRef.current.getViewport();
             }
+
+            // Compute absolute position (own position + parent group position)
+            let absX = node.position.x;
+            let absY = node.position.y;
+            if (node.parentId) {
+              const parent = nodes.find((n) => n.id === node.parentId);
+              if (parent) {
+                absX += parent.position.x;
+                absY += parent.position.y;
+              }
+            }
+
+            // Zoom to 1 and position node at ~75% from left (panel opens on left)
+            const vw = window.innerWidth;
+            const vh = window.innerHeight - 48; // subtract header height
+            const zoom = 1;
+            const targetX = vw * 0.75 - (absX + NODE_W / 2) * zoom;
+            const targetY = vh * 0.5 - (absY + NODE_H / 2) * zoom;
+
+            reactFlowRef.current?.setViewport({ x: targetX, y: targetY, zoom }, { duration: 500 });
+
+            setSelectedNode(node.id);
+            setDetailService(svc);
           }}
-          onNodeDragStop={() => setSelectedNode(null)}
-          onPaneClick={() => { setSelectedNode(null); setLogPanelService(null); }}
+          onPaneClick={() => {
+            if (detailService) closeDetail();
+          }}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView
@@ -520,18 +546,22 @@ function Dashboard({ token }: { token: string }) {
             style={{ background: "#0f172a" }}
           />
         </ReactFlow>
-      </div>
 
-      {logPanelService && (
-        <LogPanel
-          service={logPanelService}
-          logLines={logLines}
-          token={token}
-          onClose={() => { setLogPanelService(null); setSelectedNode(null); }}
-          sendMessage={sendMessage}
-          clearLogLines={clearLogLines}
-        />
-      )}
+        {detailService && (
+          <DetailPanel
+            service={detailService}
+            stats={stats.get(detailService.uid)}
+            logLines={logLines}
+            token={token}
+            closing={panelClosing}
+            onClose={closeDetail}
+            sendMessage={sendMessage}
+            clearLogLines={clearLogLines}
+            connections={filteredConnections}
+            services={filteredServices}
+          />
+        )}
+      </div>
     </div>
   );
 }
