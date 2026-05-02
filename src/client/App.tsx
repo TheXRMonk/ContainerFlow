@@ -18,6 +18,7 @@ import { useDocker } from "./hooks/useDocker";
 import { createStatsStore, StatsStoreContext } from "./hooks/useStatsStore";
 import { buildLayout, computeEdges, NODE_WIDTH, NODE_HEIGHT, GROUP_PADDING, GROUP_HEADER } from "./engine/layout";
 import { DetailPanel } from "./panels/DetailPanel";
+import { NodeContextMenu } from "./components/NodeContextMenu";
 import { LoginScreen } from "./components/LoginScreen";
 import { OffsetEdge } from "./components/OffsetEdge";
 import { HeaderBar, type Page } from "./components/HeaderBar";
@@ -84,9 +85,11 @@ function Dashboard({ token }: { token: string }) {
   const filterRef = useRef<HTMLDivElement>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [detailService, setDetailService] = useState<Service | null>(null);
+  const [openLogsFullscreen, setOpenLogsFullscreen] = useState(false);
   const reactFlowRef = useRef<any>(null);
   const prevViewport = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const isDragging = useRef(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; service: Service } | null>(null);
 
   // Close filter dropdown on outside click
   useEffect(() => {
@@ -121,6 +124,7 @@ function Dashboard({ token }: { token: string }) {
       startTransition(() => {
         setDetailService(null);
         setPanelClosing(false);
+        setOpenLogsFullscreen(false);
       });
     }, 400);
   }, [panelClosing]);
@@ -448,7 +452,7 @@ function Dashboard({ token }: { token: string }) {
         token={token}
         totalStats={totalStats}
         activePage={activePage}
-        onPageChange={setActivePage}
+        onPageChange={(page) => { setContextMenu(null); setActivePage(page); }}
         events={events}
       />
 
@@ -465,7 +469,15 @@ function Dashboard({ token }: { token: string }) {
           onEdgesChange={onEdgesChange}
           onNodeDragStart={() => { isDragging.current = true; }}
           onNodeDragStop={() => { isDragging.current = false; }}
+          onNodeContextMenu={(e, node) => {
+            e.preventDefault();
+            if (node.type !== "service") return;
+            const svc = filteredServices.find((s) => s.uid === node.id);
+            if (!svc) return;
+            setContextMenu({ x: e.clientX, y: e.clientY, service: svc });
+          }}
           onNodeClick={(_e, node) => {
+            setContextMenu(null);
             if (isDragging.current) return;
             if (node.type !== "service") return;
 
@@ -503,7 +515,9 @@ function Dashboard({ token }: { token: string }) {
               setDetailService(svc);
             });
           }}
+          onMoveStart={() => { setContextMenu(null); }}
           onPaneClick={() => {
+            setContextMenu(null);
             if (detailService) closeDetail();
           }}
           nodeTypes={nodeTypes}
@@ -603,6 +617,60 @@ function Dashboard({ token }: { token: string }) {
           </div>
         )}
 
+        {contextMenu && (
+          <NodeContextMenu
+            position={{ x: contextMenu.x, y: contextMenu.y }}
+            service={contextMenu.service}
+            onClose={() => setContextMenu(null)}
+            onAction={(action) => {
+              const svc = contextMenu.service;
+              const headers: Record<string, string> = {};
+              if (token) headers["Authorization"] = `Bearer ${token}`;
+              fetch(`/api/containers/${svc.id}/${action}`, { method: "POST", headers })
+                .then((r) => {
+                  if (r.ok) {
+                    const expectedState: Service["state"] =
+                      action === "stop" || action === "remove" ? "exited" :
+                      action === "start" || action === "restart" || action === "rebuild" ? "running" :
+                      svc.state;
+                    const minDuration = action === "restart" || action === "rebuild" ? 5000 : 0;
+                    setProcessing(svc.uid, expectedState, minDuration);
+                  }
+                })
+                .catch(() => {});
+            }}
+            onOpenLogs={() => {
+              const svc = contextMenu.service;
+              const node = nodes.find((n) => n.id === svc.uid);
+              if (!node) return;
+
+              if (reactFlowRef.current && !prevViewport.current) {
+                prevViewport.current = reactFlowRef.current.getViewport();
+              }
+
+              let absX = node.position.x;
+              let absY = node.position.y;
+              if (node.parentId) {
+                const parent = nodes.find((n) => n.id === node.parentId);
+                if (parent) { absX += parent.position.x; absY += parent.position.y; }
+              }
+
+              const vw = window.innerWidth;
+              const vh = window.innerHeight - 48;
+              const zoom = 1.5;
+              const targetX = vw * 0.75 - (absX + NODE_W / 2) * zoom;
+              const targetY = vh * 0.5 - (absY + NODE_H / 2) * zoom;
+              reactFlowRef.current?.setViewport({ x: targetX, y: targetY, zoom }, { duration: 400 });
+
+              startTransition(() => {
+                setOpenLogsFullscreen(true);
+                setSelectedNode(svc.uid);
+                setDetailService(svc);
+              });
+            }}
+          />
+        )}
+
         {detailService && (
           <DetailPanel
             service={filteredServices.find((s) => s.uid === detailService.uid) || detailService}
@@ -617,6 +685,7 @@ function Dashboard({ token }: { token: string }) {
             connections={filteredConnections}
             services={filteredServices}
             getLogsSince={getLogsSince}
+            initialLogsFullscreen={openLogsFullscreen}
           />
         )}
       </div>

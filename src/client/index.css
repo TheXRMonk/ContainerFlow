@@ -47,6 +47,22 @@
   background-color: #334155 !important;
 }
 
+/* Disable hover effect on nodes */
+.react-flow__node:hover {
+  box-shadow: none !important;
+}
+
+/* Pointer cursor on service nodes, grabbing while dragging */
+.react-flow__node-service {
+  cursor: pointer !important;
+}
+.react-flow__node-service.dragging {
+  cursor: grabbing !important;
+}
+.react-flow__node-group {
+  cursor: default !important;
+}
+
 /* Flash animations for Docker events */
 @keyframes flash-border-green {
   0% { border-color: #22c55e; box-shadow: 0 0 12px 2px rgba(34, 197, 94, 0.4); }

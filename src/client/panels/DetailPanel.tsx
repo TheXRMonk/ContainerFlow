@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo, startTransition } from "react";
-import { X, Pause, Play, Square, RotateCw, Hammer, Trash2, Terminal, Network, Globe, Info, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check, Loader2, AlertTriangle, Maximize2 } from "lucide-react";
+import { X, Pause, Play, Square, RotateCw, Hammer, Trash2, Terminal, Network, Globe, Info, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check, Loader2, AlertTriangle, Maximize2, ExternalLink } from "lucide-react";
 import type { Service, Stats, LogLine, WSMessage, Connection } from "../../shared/types";
 
 type Tab = "info" | "config" | "env" | "stats";
@@ -41,9 +41,10 @@ interface DetailPanelProps {
   connections: Connection[];
   services: Service[];
   getLogsSince: (uid: string) => number | undefined;
+  initialLogsFullscreen?: boolean;
 }
 
-export function DetailPanel({ service, stats, logLines, token, closing, onClose, onAction, sendMessage, clearLogLines, connections, services, getLogsSince }: DetailPanelProps) {
+export function DetailPanel({ service, stats, logLines, token, closing, onClose, onAction, sendMessage, clearLogLines, connections, services, getLogsSince, initialLogsFullscreen }: DetailPanelProps) {
   const [initialLogs, setInitialLogs] = useState<LogLine[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -55,15 +56,15 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
   const [envVisibleAll, setEnvVisibleAll] = useState(false);
   const [envVisibleSet, setEnvVisibleSet] = useState<Set<number>>(new Set());
   const [copiedEnvIdx, setCopiedEnvIdx] = useState<number | null>(null);
-  const [logsModal, setLogsModal] = useState(false);
+  const [logsModal, setLogsModal] = useState(!!initialLogsFullscreen);
   const modalScrollRef = useRef<HTMLDivElement>(null);
 
-  // Scroll modal to bottom when opened
+  // Scroll modal to bottom when opened or when logs arrive
   useEffect(() => {
     if (logsModal && modalScrollRef.current) {
       modalScrollRef.current.scrollTop = modalScrollRef.current.scrollHeight;
     }
-  }, [logsModal]);
+  }, [logsModal, initialLogs, logLines]);
   const isProcessing = (service.state as string) === "processing";
   const processingStartedAt = (service as any)._processingStartedAt as number | undefined;
   const [elapsed, setElapsed] = useState(0);
@@ -251,6 +252,18 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
         <div className="flex items-center gap-2.5">
           <span className={`w-2 h-2 rounded-full ${stateDot}`} />
           <span className="text-sm font-semibold text-white truncate">{service.name}</span>
+          {service.ports.length > 0 && service.state === "running" && (
+            <a
+              href={`http://${window.location.hostname}:${service.ports[0].host}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-slate-500 hover:text-cyan-400 transition-colors"
+              title={`Open http://${window.location.hostname}:${service.ports[0].host}`}
+            >
+              <ExternalLink size={12} />
+              <span className="text-[11px] font-mono">:{service.ports[0].host}</span>
+            </a>
+          )}
           <span className={`text-xs font-mono ${stateColor} flex items-center gap-1`}>
             {isProcessing ? `processing... ${elapsed}s` :
              isCrashed ? <><AlertTriangle size={11} />crashed (exit {service.exit_code}{service.oom_killed ? ", OOM" : ""})</> :
@@ -427,10 +440,18 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                   <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">Ports</span>
                   <div className="flex flex-wrap gap-1.5">
                     {service.ports.map((p, i) => (
-                      <span key={i} className="inline-flex items-center gap-1.5 text-sm font-mono bg-slate-800/80 text-cyan-300 px-2.5 py-1 rounded">
+                      <a
+                        key={i}
+                        href={`http://${window.location.hostname}:${p.host}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm font-mono bg-slate-800/80 text-cyan-300 px-2.5 py-1 rounded hover:bg-slate-700/80 hover:text-cyan-200 transition-colors cursor-pointer"
+                        title={`Open http://${window.location.hostname}:${p.host}`}
+                      >
                         <Globe size={13} className="text-slate-500" />
                         {p.host} → {p.container}
-                      </span>
+                        <ExternalLink size={11} className="text-slate-500" />
+                      </a>
                     ))}
                   </div>
                 </div>
