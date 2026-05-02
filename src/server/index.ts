@@ -3,10 +3,10 @@ import { serveStatic } from "hono/bun";
 import { cors } from "hono/cors";
 import path from "path";
 import fs from "fs";
-import { discoverServices, discoverConnections, getContainerLogs, streamContainerLogs } from "./docker";
+import { docker, discoverServices, discoverConnections, getContainerLogs, streamContainerLogs } from "./docker";
 import { pollStats, watchDockerEvents } from "./watcher";
 import { loadFlows, getFlows, getSettings } from "./flows";
-import type { WSMessage } from "../shared/types";
+import type { Service, WSMessage } from "../shared/types";
 
 const app = new Hono();
 
@@ -64,14 +64,112 @@ app.get("/api/flows", (c) => {
   return c.json({ flows: getFlows(), settings: getSettings() });
 });
 
+// ── Container actions ──
+app.post("/api/containers/:id/stop", async (c) => {
+  const id = c.req.param("id");
+  if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
+  try {
+    const container = docker.getContainer(id);
+    await container.stop();
+    // Docker events will trigger refresh automatically when state changes
+    return c.json({ ok: true });
+  } catch (err: any) {
+    if (err?.statusCode === 304) return c.json({ ok: true, message: "Already stopped" });
+    return c.json({ error: err?.message || "Failed to stop container" }, 500);
+  }
+});
+
+app.post("/api/containers/:id/start", async (c) => {
+  const id = c.req.param("id");
+  if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
+  try {
+    const container = docker.getContainer(id);
+    await container.start();
+    // Docker events will trigger refresh automatically when state changes
+    return c.json({ ok: true });
+  } catch (err: any) {
+    if (err?.statusCode === 304) return c.json({ ok: true, message: "Already running" });
+    return c.json({ error: err?.message || "Failed to start container" }, 500);
+  }
+});
+
+app.post("/api/containers/:id/restart", async (c) => {
+  const id = c.req.param("id");
+  if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
+  try {
+    const container = docker.getContainer(id);
+    await container.restart();
+    // Docker events will trigger refresh automatically when state changes
+    return c.json({ ok: true });
+  } catch (err: any) {
+    return c.json({ error: err?.message || "Failed to restart container" }, 500);
+  }
+});
+
+app.post("/api/containers/:id/rebuild", async (c) => {
+  const id = c.req.param("id");
+  if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
+  try {
+    const container = docker.getContainer(id);
+    const info = await container.inspect();
+    const composeFile = info.Config?.Labels?.["com.docker.compose.project.config_files"];
+    const serviceName = info.Config?.Labels?.["com.docker.compose.service"];
+    if (!composeFile || !serviceName) {
+      return c.json({ error: "Not a Compose service — rebuild requires docker-compose" }, 400);
+    }
+    const proc = Bun.spawn(["docker", "compose", "-f", composeFile, "up", "--build", "-d", serviceName], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      const stderr = await new Response(proc.stderr).text();
+      return c.json({ error: stderr || `Rebuild failed with exit code ${exitCode}` }, 500);
+    }
+    return c.json({ ok: true });
+  } catch (err: any) {
+    return c.json({ error: err?.message || "Failed to rebuild container" }, 500);
+  }
+});
+
+app.post("/api/containers/:id/remove", async (c) => {
+  const id = c.req.param("id");
+  if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
+  try {
+    const container = docker.getContainer(id);
+    const info = await container.inspect();
+    const composeFile = info.Config?.Labels?.["com.docker.compose.project.config_files"];
+    const serviceName = info.Config?.Labels?.["com.docker.compose.service"];
+    if (!composeFile || !serviceName) {
+      // Not a compose service — just stop and remove the container
+      try { await container.stop(); } catch {}
+      await container.remove({ force: true });
+      return c.json({ ok: true });
+    }
+    const proc = Bun.spawn(["docker", "compose", "-f", composeFile, "rm", "-sf", serviceName], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      const stderr = await new Response(proc.stderr).text();
+      return c.json({ error: stderr || `Remove failed with exit code ${exitCode}` }, 500);
+    }
+    return c.json({ ok: true });
+  } catch (err: any) {
+    return c.json({ error: err?.message || "Failed to remove container" }, 500);
+  }
+});
+
 app.get("/api/logs/:id", async (c) => {
   const id = c.req.param("id");
   if (!/^[a-f0-9]{12,64}$/.test(id)) {
     return c.json({ error: "Invalid container ID" }, 400);
   }
   const tail = Math.min(Math.max(parseInt(c.req.query("tail") || "200") || 200, 1), 5000);
+  const since = c.req.query("since") ? parseInt(c.req.query("since")!) : undefined;
   try {
-    const lines = await getContainerLogs(id, tail);
+    const lines = await getContainerLogs(id, tail, since);
     return c.json(lines);
   } catch (err) {
     return c.json({ error: "Failed to fetch logs" }, 500);
@@ -139,11 +237,14 @@ function cleanupLogStream(ws: WebSocket) {
 }
 
 // ── Docker events ──
+let servicesLock = false;
+let statsLock = false;
+
 async function refreshServices() {
+  if (servicesLock) return;
+  servicesLock = true;
   try {
     const services = await discoverServices(ALL, PROJECTS);
-    const connections = await discoverConnections(services);
-    const stats = await pollStats(services);
 
     const svcHash = services.map((s) => `${s.uid}:${s.state}`).join("|");
     if (svcHash !== lastServicesHash) {
@@ -151,49 +252,56 @@ async function refreshServices() {
       broadcast({ type: "services", data: services });
     }
 
+    const connections = await discoverConnections(services);
     const connHash = connections.map((c) => `${c.from}:${c.to}`).join("|");
     if (connHash !== lastConnectionsHash) {
       lastConnectionsHash = connHash;
       broadcast({ type: "connections", data: connections });
     }
 
-    broadcast({ type: "stats", data: stats });
+    // Stats polling is separate — don't block services refresh
+    refreshStats(services);
   } catch (err) {
     console.error("Refresh error:", err);
+  } finally {
+    servicesLock = false;
   }
 }
 
-// Quick refresh — services + connections, no stats (fast)
-async function quickRefresh() {
+let statsLockTimer: ReturnType<typeof setTimeout> | undefined;
+async function refreshStats(services: Service[]) {
+  if (statsLock) return;
+  statsLock = true;
+  // Safety: force-unlock after 30s in case pollStats hangs
+  clearTimeout(statsLockTimer);
+  statsLockTimer = setTimeout(() => { statsLock = false; }, 30000);
   try {
-    const services = await discoverServices(ALL, PROJECTS);
-    const svcHash = services.map((s) => `${s.uid}:${s.state}`).join("|");
-    if (svcHash !== lastServicesHash) {
-      lastServicesHash = svcHash;
-      broadcast({ type: "services", data: services });
-
-      // Also refresh connections when services change
-      const connections = await discoverConnections(services);
-      const connHash = connections.map((c) => `${c.from}:${c.to}`).join("|");
-      if (connHash !== lastConnectionsHash) {
-        lastConnectionsHash = connHash;
-        broadcast({ type: "connections", data: connections });
-      }
-    }
-  } catch {}
+    const stats = await pollStats(services);
+    broadcast({ type: "stats", data: stats });
+  } catch (err) {
+    console.error("Stats error:", err);
+  } finally {
+    clearTimeout(statsLockTimer);
+    statsLock = false;
+  }
 }
 
 // Debounced refresh for Docker events
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
+let lateRetryTimer: ReturnType<typeof setTimeout> | undefined;
 function scheduleRefresh() {
+  // Invalidate hash so next refresh always broadcasts (restart: same final state but clients need the update)
+  lastServicesHash = "";
   clearTimeout(refreshTimer);
   clearTimeout(retryTimer);
-  // First check at 1.5s, retry at 3.5s to catch stragglers (e.g. slow destroy)
+  clearTimeout(lateRetryTimer);
   refreshTimer = setTimeout(() => {
-    quickRefresh();
-    retryTimer = setTimeout(quickRefresh, 2000);
-  }, 1500);
+    refreshServices();
+    retryTimer = setTimeout(refreshServices, 1500);
+    // Late retry for restart/rebuild: client ignores first 5s, so re-broadcast after that
+    lateRetryTimer = setTimeout(() => { lastServicesHash = ""; refreshServices(); }, 6000);
+  }, 500);
 }
 
 watchDockerEvents((event) => {

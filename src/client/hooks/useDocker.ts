@@ -17,6 +17,8 @@ export function useDocker(token = "") {
   const [statsVersion, setStatsVersion] = useState(0);
   const [events, setEvents] = useState<DockerEvent[]>([]);
   const [logLines, setLogLines] = useState<LogLine[]>([]);
+  // Processing state: uid → { expected state, start time, min duration before clearing }
+  const processingRef = useRef<Map<string, { expected: Service["state"]; startedAt: number; minDuration: number }>>(new Map());
   const [flows, setFlows] = useState<Flow[]>([]);
   const [flowSettings, setFlowSettings] = useState<FlowSettings>({
     particle_size: 5, trail: true, trail_opacity: 0.3, glow: true, max_particles: 50,
@@ -85,9 +87,41 @@ export function useDocker(token = "") {
         }
 
         switch (msg.type as WSMessage["type"]) {
-          case "services":
-            setServices((prev) => arraysEqual(prev, msg.data) ? prev : msg.data);
+          case "services": {
+            const processing = processingRef.current;
+            let incoming = msg.data as Service[];
+            if (processing.size > 0) {
+              const now = Date.now();
+              incoming = incoming.map((s: Service) => {
+                const entry = processing.get(s.uid);
+                if (!entry) return s;
+                // Don't clear processing until minDuration has passed (restart/rebuild need time for stop→start cycle)
+                const elapsed = now - entry.startedAt;
+                if (elapsed < entry.minDuration) {
+                  return { ...s, state: "processing" as any, _processingStartedAt: entry.startedAt } as any;
+                }
+                // Server confirms expected state → clear processing
+                if (s.state === entry.expected) {
+                  processing.delete(s.uid);
+                  return s;
+                }
+                // Container crashed while we expected "running" → clear processing, show crashed
+                if (s.state === "crashed" && entry.expected === "running") {
+                  processing.delete(s.uid);
+                  return s;
+                }
+                // Timeout after 15s → give up, show real state
+                if (now - entry.startedAt > 15000) {
+                  processing.delete(s.uid);
+                  return s;
+                }
+                // State doesn't match expected → keep in processing, ignore stale data
+                return { ...s, state: "processing" as any, _processingStartedAt: entry.startedAt } as any;
+              });
+            }
+            setServices((prev) => arraysEqual(prev, incoming) ? prev : incoming);
             break;
+          }
           case "connections":
             setConnections((prev) => {
               if (prev.length === msg.data.length &&
@@ -173,5 +207,18 @@ export function useDocker(token = "") {
     return () => { particleSpawnCallbacks.current.delete(cb); };
   }, []);
 
-  return { services, connections, stats: statsRef.current, statsVersion, events, connected, logLines, sendMessage, clearLogLines, flows, flowSettings, onParticleSpawn };
+  const actionTimestamps = useRef<Map<string, number>>(new Map());
+
+  const setProcessing = useCallback((uid: string, expectedState: Service["state"], minDuration = 0) => {
+    const startedAt = Date.now();
+    processingRef.current.set(uid, { expected: expectedState, startedAt, minDuration });
+    actionTimestamps.current.set(uid, Math.floor(startedAt / 1000));
+    setServices((prev) => prev.map((s) => s.uid === uid ? { ...s, state: "processing" as any, _processingStartedAt: startedAt } as any : s));
+  }, []);
+
+  const getLogsSince = useCallback((uid: string): number | undefined => {
+    return actionTimestamps.current.get(uid);
+  }, []);
+
+  return { services, connections, stats: statsRef.current, statsVersion, events, connected, logLines, sendMessage, clearLogLines, flows, flowSettings, onParticleSpawn, setProcessing, getLogsSince };
 }

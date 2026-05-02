@@ -8,7 +8,10 @@ export async function pollStats(services: Service[]): Promise<Stats[]> {
   for (const svc of running) {
     try {
       const container = docker.getContainer(svc.id);
-      const raw = await container.stats({ stream: false });
+      const raw = await Promise.race([
+        container.stats({ stream: false }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
+      ]) as any;
 
       const cpuDelta =
         raw.cpu_stats.cpu_usage.total_usage - raw.precpu_stats.cpu_usage.total_usage;

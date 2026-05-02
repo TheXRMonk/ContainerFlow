@@ -70,7 +70,7 @@ export default function App() {
 }
 
 function Dashboard({ token }: { token: string }) {
-  const { services, connections, stats, statsVersion, events, connected, logLines, sendMessage, clearLogLines, flows, flowSettings, onParticleSpawn } = useDocker(token);
+  const { services, connections, stats, statsVersion, events, connected, logLines, sendMessage, clearLogLines, flows, flowSettings, onParticleSpawn, setProcessing, getLogsSince } = useDocker(token);
   const engineRef = useRef<ParticleEngine>(null);
   if (!engineRef.current) {
     engineRef.current = new ParticleEngine();
@@ -99,15 +99,15 @@ function Dashboard({ token }: { token: string }) {
   const closeDetail = useCallback(() => {
     if (panelClosing) return;
     setPanelClosing(true);
+    setSelectedNode(null);
     if (prevViewport.current && reactFlowRef.current) {
-      reactFlowRef.current.setViewport(prevViewport.current, { duration: 500 });
+      reactFlowRef.current.setViewport(prevViewport.current, { duration: 400 });
       prevViewport.current = null;
     }
-    setSelectedNode(null);
     setTimeout(() => {
       setDetailService(null);
       setPanelClosing(false);
-    }, 300);
+    }, 400);
   }, [panelClosing]);
 
   // Load saved positions
@@ -508,11 +508,11 @@ function Dashboard({ token }: { token: string }) {
             // Zoom to 1 and position node at ~75% from left (panel opens on left)
             const vw = window.innerWidth;
             const vh = window.innerHeight - 48; // subtract header height
-            const zoom = 1;
+            const zoom = 1.5;
             const targetX = vw * 0.75 - (absX + NODE_W / 2) * zoom;
             const targetY = vh * 0.5 - (absY + NODE_H / 2) * zoom;
 
-            reactFlowRef.current?.setViewport({ x: targetX, y: targetY, zoom }, { duration: 500 });
+            reactFlowRef.current?.setViewport({ x: targetX, y: targetY, zoom }, { duration: 400 });
 
             setSelectedNode(node.id);
             setDetailService(svc);
@@ -549,16 +549,18 @@ function Dashboard({ token }: { token: string }) {
 
         {detailService && (
           <DetailPanel
-            service={detailService}
+            service={filteredServices.find((s) => s.uid === detailService.uid) || detailService}
             stats={stats.get(detailService.uid)}
             logLines={logLines}
             token={token}
             closing={panelClosing}
             onClose={closeDetail}
+            onAction={setProcessing}
             sendMessage={sendMessage}
             clearLogLines={clearLogLines}
             connections={filteredConnections}
             services={filteredServices}
+            getLogsSince={getLogsSince}
           />
         )}
       </div>

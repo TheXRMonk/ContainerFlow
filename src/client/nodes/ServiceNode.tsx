@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState, useEffect } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   Database,
@@ -20,6 +20,7 @@ import {
   Rabbit,
   Mail,
   BarChart3,
+  AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 import type { Stats } from "../../shared/types";
@@ -45,6 +46,8 @@ const stateStyles: Record<string, { ring: string; dot: string; bg: string; borde
   paused: { ring: "ring-amber-500/50", dot: "bg-amber-500", bg: "bg-amber-500/10", border: "border-amber-500/60" },
   restarting: { ring: "ring-amber-500/50", dot: "bg-amber-500", bg: "bg-amber-500/10", border: "border-amber-500/60" },
   dead: { ring: "ring-red-500/50", dot: "bg-red-500", bg: "bg-red-500/10", border: "border-red-500/60" },
+  crashed: { ring: "ring-orange-500/50", dot: "bg-orange-500", bg: "bg-orange-500/10", border: "border-orange-500/60" },
+  processing: { ring: "ring-yellow-500/50", dot: "bg-yellow-500 animate-pulse", bg: "bg-yellow-500/10", border: "border-yellow-500/60" },
 };
 
 // Map image/name patterns to Lucide icons and colors
@@ -98,6 +101,17 @@ function guessIcon(image: string, name: string): { Icon: LucideIcon; color: stri
   }
 
   return { Icon: Container, color: "#64748b" };
+}
+
+function ProcessingTimer({ startedAt }: { startedAt: number }) {
+  const [elapsed, setElapsed] = useState(Math.floor((Date.now() - startedAt) / 1000));
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [startedAt]);
+  return <span className="text-[10px] font-mono text-yellow-400 ml-1">{elapsed}s</span>;
 }
 
 export const ServiceNode = memo(function ServiceNode({ data }: NodeProps) {
@@ -164,7 +178,16 @@ export const ServiceNode = memo(function ServiceNode({ data }: NodeProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-bold text-white text-sm truncate">{d.label}</span>
-            <div className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
+            {d.state === "processing" ? (
+              <div className="flex items-center gap-0.5 shrink-0">
+                <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+                {(d as any)._processingStartedAt && <ProcessingTimer startedAt={(d as any)._processingStartedAt} />}
+              </div>
+            ) : d.state === "crashed" ? (
+              <AlertTriangle size={12} className="text-orange-500 shrink-0" />
+            ) : (
+              <div className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
+            )}
           </div>
           <div className="text-xs text-slate-500 truncate mt-0.5">
             {d.image.startsWith("sha256:") ? `Sin Tag (${d.image.slice(7, 19)})` : d.image}

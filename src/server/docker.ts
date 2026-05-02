@@ -45,12 +45,21 @@ export async function discoverServices(all: boolean, projects: string[]): Promis
       .map((entry: any) => `[${entry.ExitCode}] ${entry.Output?.trim() || ""}`)
       .filter((s: string) => s.length > 4);
 
+    const exitCode: number = info?.State?.ExitCode ?? 0;
+    const restartCount: number = info?.RestartCount ?? 0;
+    const oomKilled: boolean = info?.State?.OOMKilled ?? false;
+
+    // Detect crashed: exited with non-zero exit code or OOM killed
+    const rawState = c.State as string;
+    const isCrashed = rawState === "exited" && (exitCode !== 0 || oomKilled);
+    const state: Service["state"] = isCrashed ? "crashed" : rawState as Service["state"];
+
     return {
       id: c.Id.slice(0, 12),
       uid: `${project}/${name}`,
       name,
       image: c.Image,
-      state: c.State as Service["state"],
+      state,
       status: c.Status,
       ports: [...new Map(
         c.Ports.filter((p) => p.PublicPort).map((p) => [
@@ -68,6 +77,9 @@ export async function discoverServices(all: boolean, projects: string[]): Promis
       cpu_quota: info?.HostConfig?.CpuQuota || 0,
       health_status: healthStatus,
       health_log: healthLog,
+      exit_code: exitCode,
+      restart_count: restartCount,
+      oom_killed: oomKilled,
     };
   });
 
@@ -184,14 +196,16 @@ export async function discoverConnections(services: Service[]): Promise<Connecti
 
 // ── Container logs ──
 
-export async function getContainerLogs(id: string, tail = 200): Promise<LogLine[]> {
+export async function getContainerLogs(id: string, tail = 200, since?: number): Promise<LogLine[]> {
   const container = docker.getContainer(id);
-  const logBuffer = await container.logs({
+  const opts: Record<string, any> = {
     stdout: true,
     stderr: true,
     tail,
     timestamps: true,
-  });
+  };
+  if (since) opts.since = since;
+  const logBuffer = await container.logs(opts);
 
   const lines: LogLine[] = [];
   const raw = Buffer.isBuffer(logBuffer) ? logBuffer : Buffer.from(logBuffer as any);

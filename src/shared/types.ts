@@ -3,7 +3,7 @@ export interface Service {
   uid: string;
   name: string;
   image: string;
-  state: "running" | "exited" | "paused" | "restarting" | "dead";
+  state: "running" | "exited" | "paused" | "restarting" | "dead" | "crashed";
   status: string;
   ports: { host: number; container: number }[];
   networks: string[];
@@ -16,6 +16,9 @@ export interface Service {
   cpu_quota: number;
   health_status: string;
   health_log: string[];
+  exit_code: number;
+  restart_count: number;
+  oom_killed: boolean;
 }
 
 export interface Connection {
