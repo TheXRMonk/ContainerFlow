@@ -5,7 +5,6 @@ import path from "path";
 import fs from "fs";
 import { docker, discoverServices, discoverConnections, getContainerLogs, streamContainerLogs } from "./docker";
 import { pollStats, watchDockerEvents } from "./watcher";
-import { loadFlows, getFlows, getSettings } from "./flows";
 import type { Service, WSMessage } from "../shared/types";
 
 const app = new Hono();
@@ -56,13 +55,6 @@ app.get("/api/connections", async (c) => {
 });
 
 app.get("/api/health", (c) => c.json({ ok: true, mode: ALL ? "all" : "filtered", projects: PROJECTS }));
-
-// ── Flows ──
-loadFlows();
-
-app.get("/api/flows", (c) => {
-  return c.json({ flows: getFlows(), settings: getSettings() });
-});
 
 // ── Container actions ──
 app.post("/api/containers/:id/stop", async (c) => {
@@ -337,11 +329,6 @@ const server = Bun.serve({
 
       if (!AUTH_TOKEN) {
         // No auth required — send data immediately
-        const flowsData = { flows: getFlows(), settings: getSettings() };
-        if (flowsData.flows.length > 0) {
-          try { native.send(JSON.stringify({ type: "flows", data: flowsData })); } catch {}
-        }
-        // Send current services/connections/stats
         discoverServices(ALL, PROJECTS).then(async (services) => {
           const connections = await discoverConnections(services);
           const stats = await pollStats(services);
@@ -369,11 +356,6 @@ const server = Bun.serve({
           if (msg.token === AUTH_TOKEN) {
             authenticatedClients.add(native);
             native.send(JSON.stringify({ type: "auth_ok" }));
-            // Send initial data after auth
-            const flowsData = { flows: getFlows(), settings: getSettings() };
-            if (flowsData.flows.length > 0) {
-              native.send(JSON.stringify({ type: "flows", data: flowsData }));
-            }
             // Send current services/connections/stats immediately
             discoverServices(ALL, PROJECTS).then(async (services) => {
               const connections = await discoverConnections(services);
@@ -405,14 +387,6 @@ const server = Bun.serve({
           logStreams.set(native, stream);
         } else if (msg.type === "unsubscribe_logs") {
           cleanupLogStream(native);
-        } else if (msg.type === "simulate_flow" && msg.flowId) {
-          const flow = getFlows().find((f) => f.id === msg.flowId);
-          if (flow) {
-            broadcast({
-              type: "particle_spawn",
-              data: { flowId: flow.id, color: flow.color, speed: flow.speed, path: flow.path },
-            });
-          }
         }
       } catch (err) {
         console.error("Failed to handle WS message:", err);

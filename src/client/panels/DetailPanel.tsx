@@ -149,10 +149,10 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
     if (closing) setVisible(false);
   }, [closing]);
 
-  // Slide-out then unmount
+  // Slide-out + zoom-out in parallel
   const handleClose = useCallback(() => {
     setVisible(false);
-    setTimeout(() => onClose(), 400);
+    onClose();
   }, [onClose]);
 
   // Fetch initial logs + subscribe

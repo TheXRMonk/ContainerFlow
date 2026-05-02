@@ -16,14 +16,12 @@ import { ServiceNode } from "./nodes/ServiceNode";
 import { GroupNode } from "./nodes/GroupNode";
 import { useDocker } from "./hooks/useDocker";
 import { buildLayout, computeEdges, NODE_WIDTH, NODE_HEIGHT, GROUP_PADDING, GROUP_HEADER } from "./engine/layout";
-import { ParticleEngine } from "./engine/particles";
-import { ParticleOverlay } from "./components/ParticleOverlay";
 import { DetailPanel } from "./panels/DetailPanel";
 import { LoginScreen } from "./components/LoginScreen";
 import { OffsetEdge } from "./components/OffsetEdge";
 import { HeaderBar } from "./components/HeaderBar";
 import { EdgeLegend } from "./components/EdgeLegend";
-import type { Service, Flow } from "../shared/types";
+import type { Service } from "../shared/types";
 
 const nodeTypes = { service: ServiceNode, group: GroupNode };
 const edgeTypes = { offsetSmooth: OffsetEdge };
@@ -70,13 +68,7 @@ export default function App() {
 }
 
 function Dashboard({ token }: { token: string }) {
-  const { services, connections, stats, statsVersion, events, connected, logLines, sendMessage, clearLogLines, flows, flowSettings, onParticleSpawn, setProcessing, getLogsSince } = useDocker(token);
-  const engineRef = useRef<ParticleEngine>(null);
-  if (!engineRef.current) {
-    engineRef.current = new ParticleEngine();
-  }
-  const engine = engineRef.current;
-  engine.maxParticles = flowSettings.max_particles;
+  const { services, connections, stats, statsVersion, events, connected, logLines, sendMessage, clearLogLines, setProcessing, getLogsSince } = useDocker(token);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const initialLayoutDone = useRef(false);
@@ -370,55 +362,6 @@ function Dashboard({ token }: { token: string }) {
     }, 1200);
   }, [events]);
 
-  // Flow path resolution
-  const serviceNameToUid = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const s of services) map.set(s.name, s.uid);
-    return map;
-  }, [services]);
-
-  const resolveFlowPath = useCallback((path: string[]): string[] => {
-    return path.map((name) => serviceNameToUid.get(name) || name);
-  }, [serviceNameToUid]);
-
-  const handleSimulate = useCallback((flow: Flow) => {
-    const pathUids = resolveFlowPath(flow.path);
-    engine.spawn(flow.id, flow.color, flow.speed, pathUids);
-    sendMessage({ type: "simulate_flow", flowId: flow.id });
-  }, [resolveFlowPath, engine, sendMessage]);
-
-  useEffect(() => {
-    return onParticleSpawn((data) => {
-      const pathUids = resolveFlowPath(data.path);
-      engine.spawn(data.flowId, data.color, data.speed, pathUids);
-    });
-  }, [onParticleSpawn, resolveFlowPath, engine]);
-
-  // Particle node hits
-  const nodeHitTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const handleNodeHits = useCallback((hits: { nodeId: string; color: string }[]) => {
-    for (const hit of hits) {
-      const existing = nodeHitTimers.current.get(hit.nodeId);
-      if (existing) clearTimeout(existing);
-
-      setNodes((prev) =>
-        prev.map((n) =>
-          n.id === hit.nodeId ? { ...n, data: { ...n.data, particleGlow: hit.color } } : n
-        )
-      );
-
-      const timer = setTimeout(() => {
-        setNodes((prev) =>
-          prev.map((n) =>
-            n.id === hit.nodeId ? { ...n, data: { ...n.data, particleGlow: "" } } : n
-          )
-        );
-        nodeHitTimers.current.delete(hit.nodeId);
-      }, 500);
-      nodeHitTimers.current.set(hit.nodeId, timer);
-    }
-  }, [setNodes]);
-
   // Total resource consumption
   const totalStats = useMemo(() => {
     let cpu = 0;
@@ -466,10 +409,6 @@ function Dashboard({ token }: { token: string }) {
         hiddenProjects={hiddenProjects}
         onToggleProject={toggleProject}
         totalStats={totalStats}
-        flows={flows}
-        flowSettings={flowSettings}
-        engine={engine}
-        onSimulate={handleSimulate}
       />
 
       {/* Canvas — inset */}
@@ -530,7 +469,6 @@ function Dashboard({ token }: { token: string }) {
           translateExtent={[[-1000, -1000], [8000, 6000]]}
           proOptions={{ hideAttribution: true }}
         >
-          <ParticleOverlay engine={engine} settings={flowSettings} onNodeHits={handleNodeHits} />
           <Background color="#374151" gap={30} size={2} />
           <Controls position="bottom-left" />
           <EdgeLegend />

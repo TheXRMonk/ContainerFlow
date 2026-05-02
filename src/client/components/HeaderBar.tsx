@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Wifi, WifiOff, ChevronDown, Check, LogOut, Cpu, MemoryStick } from "lucide-react";
-import type { Service, Flow, FlowSettings } from "../../shared/types";
-import type { ParticleEngine } from "../engine/particles";
-import { FlowPanel } from "../panels/FlowPanel";
+import type { Service } from "../../shared/types";
 
 interface HeaderBarProps {
   services: Service[];
@@ -13,10 +11,6 @@ interface HeaderBarProps {
   hiddenProjects: Set<string>;
   onToggleProject: (project: string) => void;
   totalStats: { cpu: number; mem: number };
-  flows: Flow[];
-  flowSettings: FlowSettings;
-  engine: ParticleEngine;
-  onSimulate: (flow: Flow) => void;
 }
 
 export function HeaderBar({
@@ -28,10 +22,6 @@ export function HeaderBar({
   hiddenProjects,
   onToggleProject,
   totalStats,
-  flows,
-  flowSettings,
-  engine,
-  onSimulate,
 }: HeaderBarProps) {
   const [filterOpen, setFilterOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
@@ -88,15 +78,6 @@ export function HeaderBar({
       </div>
 
       <div className="flex items-center gap-5">
-        {/* Flow panel */}
-        <FlowPanel
-          flows={flows}
-          settings={flowSettings}
-          engine={engine}
-          services={services}
-          onSimulate={onSimulate}
-        />
-
         {/* Project filter dropdown */}
         {projects.length > 1 && (
           <div className="relative" ref={filterRef}>

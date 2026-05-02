@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { Service, Connection, Stats, DockerEvent, LogLine, Flow, FlowSettings, WSMessage } from "../../shared/types";
+import type { Service, Connection, Stats, DockerEvent, LogLine, WSMessage } from "../../shared/types";
 
 function arraysEqual(a: Service[], b: Service[]): boolean {
   if (a.length !== b.length) return false;
@@ -19,11 +19,6 @@ export function useDocker(token = "") {
   const [logLines, setLogLines] = useState<LogLine[]>([]);
   // Processing state: uid → { expected state, start time, min duration before clearing }
   const processingRef = useRef<Map<string, { expected: Service["state"]; startedAt: number; minDuration: number }>>(new Map());
-  const [flows, setFlows] = useState<Flow[]>([]);
-  const [flowSettings, setFlowSettings] = useState<FlowSettings>({
-    particle_size: 5, trail: true, trail_opacity: 0.3, glow: true, max_particles: 50,
-  });
-  const particleSpawnCallbacks = useRef<Set<(data: { flowId: string; color: string; speed: number; path: string[] }) => void>>(new Set());
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -36,14 +31,9 @@ export function useDocker(token = "") {
     Promise.all([
       fetch("/api/services", { headers }).then((r) => r.ok ? r.json() : []),
       fetch("/api/connections", { headers }).then((r) => r.ok ? r.json() : []),
-      fetch("/api/flows", { headers }).then((r) => r.ok ? r.json() : null),
-    ]).then(([svcs, conns, flowData]) => {
+    ]).then(([svcs, conns]) => {
       setServices((prev) => prev.length === 0 ? svcs : prev);
       setConnections((prev) => prev.length === 0 ? conns : prev);
-      if (flowData?.flows) {
-        setFlows((prev) => prev.length === 0 ? flowData.flows : prev);
-        setFlowSettings(flowData.settings);
-      }
     }).catch(() => {});
   }, [token]);
 
@@ -153,13 +143,6 @@ export function useDocker(token = "") {
               return next.length > 2000 ? next.slice(-1500) : next;
             });
             break;
-          case "flows":
-            setFlows(msg.data.flows);
-            setFlowSettings(msg.data.settings);
-            break;
-          case "particle_spawn":
-            for (const cb of particleSpawnCallbacks.current) cb(msg.data);
-            break;
         }
       } catch (err) {
         console.error("Failed to parse WS message:", err);
@@ -202,11 +185,6 @@ export function useDocker(token = "") {
 
   const clearLogLines = useCallback(() => setLogLines([]), []);
 
-  const onParticleSpawn = useCallback((cb: (data: { flowId: string; color: string; speed: number; path: string[] }) => void) => {
-    particleSpawnCallbacks.current.add(cb);
-    return () => { particleSpawnCallbacks.current.delete(cb); };
-  }, []);
-
   const actionTimestamps = useRef<Map<string, number>>(new Map());
 
   const setProcessing = useCallback((uid: string, expectedState: Service["state"], minDuration = 0) => {
@@ -220,5 +198,5 @@ export function useDocker(token = "") {
     return actionTimestamps.current.get(uid);
   }, []);
 
-  return { services, connections, stats: statsRef.current, statsVersion, events, connected, logLines, sendMessage, clearLogLines, flows, flowSettings, onParticleSpawn, setProcessing, getLogsSince };
+  return { services, connections, stats: statsRef.current, statsVersion, events, connected, logLines, sendMessage, clearLogLines, setProcessing, getLogsSince };
 }
