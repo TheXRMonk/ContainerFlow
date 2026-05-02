@@ -1,4 +1,4 @@
-# Flowteon
+# ContainerFlow
 
 Real-time Docker architecture visualizer. Displays services, connections and metrics from all your Docker Compose projects in an interactive dashboard.
 
@@ -10,8 +10,8 @@ Real-time Docker architecture visualizer. Displays services, connections and met
 ## Instalacion
 
 ```bash
-git clone https://github.com/RGJorge/flowteon.git
-cd flowteon
+git clone https://github.com/RGJorge/containerflow.git
+cd containerflow
 bun install
 ```
 

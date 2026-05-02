@@ -425,7 +425,7 @@ const server = Bun.serve({
 });
 
 const mode = ALL ? "all projects" : `project(s): ${PROJECTS.join(", ")}`;
-console.log(`\n  Flowteon`);
+console.log(`\n  ContainerFlow`);
 console.log(`  → http://${HOST}:${PORT}`);
 console.log(`  → Mode: ${mode}`);
 console.log(`  → Auth: ${AUTH_TOKEN ? "enabled" : "disabled (localhost only)"}\n`);

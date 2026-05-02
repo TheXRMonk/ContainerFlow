@@ -1,4 +1,4 @@
-# Mejoras Frontend - Flowteon
+# Mejoras Frontend - ContainerFlow
 
 ## Documentacion @xyflow/react 12
 
@@ -25,11 +25,11 @@
 
 ---
 
-## Ejemplos relevantes para Flowteon
+## Ejemplos relevantes para ContainerFlow
 
 ### Nodos
 
-| Ejemplo | URL | Aplicacion en Flowteon |
+| Ejemplo | URL | Aplicacion en ContainerFlow |
 |---------|-----|------------------------|
 | Custom Nodes | https://reactflow.dev/examples/nodes/custom-node | Ya usamos ServiceNode y GroupNode custom |
 | Node Toolbar | https://reactflow.dev/examples/nodes/node-toolbar | Agregar toolbar con acciones (restart, stop, logs) al seleccionar un container |
@@ -40,7 +40,7 @@
 
 ### Edges
 
-| Ejemplo | URL | Aplicacion en Flowteon |
+| Ejemplo | URL | Aplicacion en ContainerFlow |
 |---------|-----|------------------------|
 | Animating Edges | https://reactflow.dev/examples/edges/animating-edges | Animaciones en edges para indicar actividad |
 | Custom Edges | https://reactflow.dev/examples/edges/custom-edges | Ya usamos OffsetEdge custom |
@@ -52,7 +52,7 @@
 
 ### Interaccion
 
-| Ejemplo | URL | Aplicacion en Flowteon |
+| Ejemplo | URL | Aplicacion en ContainerFlow |
 |---------|-----|------------------------|
 | Context Menu | https://reactflow.dev/examples/interaction/context-menu | Click derecho en container → restart, stop, logs, inspect |
 | Contextual Zoom | https://reactflow.dev/examples/interaction/contextual-zoom | Mostrar mas detalle (ports, stats) solo cuando hay zoom suficiente |
@@ -62,7 +62,7 @@
 
 ### Layout
 
-| Ejemplo | URL | Aplicacion en Flowteon |
+| Ejemplo | URL | Aplicacion en ContainerFlow |
 |---------|-----|------------------------|
 | Dagre Tree | https://reactflow.dev/examples/layout/dagre | Ya tenemos dagre en package.json pero no lo usamos — alternativa a nuestro layout manual |
 | Elkjs Tree | https://reactflow.dev/examples/layout/elkjs | Layout mas potente que dagre, reduce cruces de edges |
@@ -71,13 +71,13 @@
 
 ### Subflows y Agrupacion
 
-| Ejemplo | URL | Aplicacion en Flowteon |
+| Ejemplo | URL | Aplicacion en ContainerFlow |
 |---------|-----|------------------------|
 | Sub Flows | https://reactflow.dev/examples/grouping/sub-flows | Referencia para nuestros GroupNode — grafos anidados |
 
 ### Estilos
 
-| Ejemplo | URL | Aplicacion en Flowteon |
+| Ejemplo | URL | Aplicacion en ContainerFlow |
 |---------|-----|------------------------|
 | Dark Mode | https://reactflow.dev/examples/styling/dark-mode | Toggle dark/light mode |
 | Tailwind | https://reactflow.dev/examples/styling/tailwind | Ya usamos Tailwind — referencia de estilos |
@@ -85,7 +85,7 @@
 
 ### Misc
 
-| Ejemplo | URL | Aplicacion en Flowteon |
+| Ejemplo | URL | Aplicacion en ContainerFlow |
 |---------|-----|------------------------|
 | Download Image | https://reactflow.dev/examples/misc/download-image | Exportar el diagrama como PNG para documentacion |
 

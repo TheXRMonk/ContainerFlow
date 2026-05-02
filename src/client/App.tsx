@@ -20,8 +20,11 @@ import { buildLayout, computeEdges, NODE_WIDTH, NODE_HEIGHT, GROUP_PADDING, GROU
 import { DetailPanel } from "./panels/DetailPanel";
 import { LoginScreen } from "./components/LoginScreen";
 import { OffsetEdge } from "./components/OffsetEdge";
-import { HeaderBar } from "./components/HeaderBar";
+import { HeaderBar, type Page } from "./components/HeaderBar";
 import { EdgeLegend } from "./components/EdgeLegend";
+import { Wifi, WifiOff, ChevronDown, Check } from "lucide-react";
+import { MonitoringPage } from "./pages/MonitoringPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import type { Service } from "../shared/types";
 
 const nodeTypes = { service: ServiceNode, group: GroupNode };
@@ -75,12 +78,26 @@ function Dashboard({ token }: { token: string }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const initialLayoutDone = useRef(false);
+  const [activePage, setActivePage] = useState<Page>("dashboard");
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(loadFilter);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [detailService, setDetailService] = useState<Service | null>(null);
   const reactFlowRef = useRef<any>(null);
   const prevViewport = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const isDragging = useRef(false);
+
+  // Close filter dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as HTMLElement)) {
+        setFilterOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const NODE_W = NODE_WIDTH;
   const NODE_H = NODE_HEIGHT;
@@ -428,16 +445,18 @@ function Dashboard({ token }: { token: string }) {
       <HeaderBar
         services={services}
         filteredServices={filteredServices}
-        connected={connected}
         token={token}
-        projects={projects}
-        hiddenProjects={hiddenProjects}
-        onToggleProject={toggleProject}
         totalStats={totalStats}
+        activePage={activePage}
+        onPageChange={setActivePage}
+        events={events}
       />
 
-      {/* Canvas — inset */}
-      <div className="flex-1 min-h-0 relative m-2 rounded-xl overflow-hidden ring-1 ring-slate-700/60 shadow-[inset_0_2px_12px_rgba(0,0,0,0.5)]">
+      {activePage === "monitoring" && <MonitoringPage events={events} />}
+      {activePage === "settings" && <SettingsPage projects={projects} servicesCount={services.length} />}
+
+      {/* Canvas — inset (only visible on dashboard) */}
+      <div className={`flex-1 min-h-0 relative mx-2 mt-1 rounded-xl overflow-hidden ring-1 ring-slate-700/60 shadow-[inset_0_2px_12px_rgba(0,0,0,0.5)] ${activePage !== "dashboard" ? "hidden" : ""}`}>
         <ReactFlow
           onInit={(instance) => { reactFlowRef.current = instance; }}
           nodes={dimmedNodes}
@@ -509,9 +528,80 @@ function Dashboard({ token }: { token: string }) {
               if (state === "exited" || state === "dead") return "#ef444480";
               return "#f59e0b80";
             }}
+            maskColor="rgba(15, 23, 42, 0.6)"
             style={{ background: "#0f172a" }}
           />
         </ReactFlow>
+
+        {/* Project filter */}
+        {projects.length > 1 && (
+          <div className="absolute top-3 right-3 z-10" ref={filterRef}>
+            <button
+              onClick={() => setFilterOpen((v) => !v)}
+              className="flex items-center gap-2 text-sm text-slate-400 bg-slate-800/80 backdrop-blur-sm hover:bg-slate-700/80 border border-slate-700/50 px-3 py-1.5 rounded-md transition-colors"
+            >
+              Projects
+              <span className="text-cyan-400 font-medium">
+                {projects.length - hiddenProjects.size}/{projects.length}
+              </span>
+              <ChevronDown size={14} className={`text-slate-500 transition-transform ${filterOpen ? "rotate-180" : ""}`} />
+            </button>
+            {filterOpen && (
+              <div className="absolute top-full right-0 mt-1.5 bg-slate-800 border border-slate-700 rounded-lg shadow-xl shadow-black/40 py-1.5 min-w-[220px]">
+                {/* Select/Deselect all */}
+                <button
+                  onClick={() => {
+                    const allVisible = hiddenProjects.size === 0;
+                    setHiddenProjects(() => {
+                      const next = allVisible ? new Set(projects) : new Set<string>();
+                      localStorage.setItem("df:filter", JSON.stringify([...next]));
+                      return next;
+                    });
+                  }}
+                  className="flex items-center gap-2.5 w-full px-3.5 py-2 text-sm hover:bg-slate-700/60 transition-colors"
+                >
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                    hiddenProjects.size === 0 ? "bg-cyan-500 border-cyan-500" : "border-slate-600"
+                  }`}>
+                    {hiddenProjects.size === 0 && <Check size={12} className="text-white" />}
+                  </div>
+                  <span className="text-slate-300 font-medium">All</span>
+                  <span className="ml-auto flex items-center gap-1.5 text-xs">
+                    <span className="text-emerald-500/70">{services.filter((s) => s.state === "running").length}</span>
+                    <span className="text-slate-600">/</span>
+                    <span className="text-slate-400">{services.length}</span>
+                  </span>
+                </button>
+                <div className="border-t border-slate-700/50 my-1" />
+                {projects.map((p) => {
+                  const active = !hiddenProjects.has(p);
+                  const projectServices = services.filter((s) => s.project === p);
+                  const running = projectServices.filter((s) => s.state === "running").length;
+                  const stopped = projectServices.length - running;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => toggleProject(p)}
+                      className="flex items-center gap-2.5 w-full px-3.5 py-2 text-sm hover:bg-slate-700/60 transition-colors"
+                    >
+                      <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                        active ? "bg-cyan-500 border-cyan-500" : "border-slate-600"
+                      }`}>
+                        {active && <Check size={12} className="text-white" />}
+                      </div>
+                      <span className={active ? "text-slate-200" : "text-slate-500"}>{p}</span>
+                      <span className="ml-auto flex items-center gap-1.5 text-xs">
+                        <span className="text-emerald-500/70">{running}</span>
+                        <span className="text-slate-600">/</span>
+                        <span className="text-slate-400">{projectServices.length}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {detailService && (
           <DetailPanel
@@ -530,6 +620,33 @@ function Dashboard({ token }: { token: string }) {
           />
         )}
       </div>
+
+      {/* Footer */}
+      <footer className="flex items-center justify-between px-5 py-1.5 text-xs text-slate-600 font-mono relative z-[9999]">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            {connected ? (
+              <Wifi size={12} className="text-emerald-500" />
+            ) : (
+              <WifiOff size={12} className="text-red-500" />
+            )}
+            <span className={connected ? "text-emerald-500" : "text-red-500"}>
+              {connected ? "Live" : "Offline"}
+            </span>
+          </div>
+          <span>
+            <span className="text-emerald-400">{filteredServices.filter((s) => s.state === "running").length}</span>
+            <span>/{filteredServices.length} containers</span>
+          </span>
+        </div>
+
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-4">
+          <span>{services.length} containers</span>
+          <span>{projects.length} projects</span>
+        </div>
+
+        <span>AlteonX</span>
+      </footer>
     </div>
     </StatsStoreContext.Provider>
   );

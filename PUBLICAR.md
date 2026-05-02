@@ -299,7 +299,7 @@ Estado actual del proyecto: **v0.1.0** | ~1,774 lineas de codigo | 0 tests | 0 C
   - Titulo sugerido: "I built a real-time Docker architecture visualizer with live metrics"
   - Incluir GIF y link al repo
 - [ ] **Hacker News**: Show HN post
-  - Titulo: "Show HN: Flowteon – Real-time Docker architecture visualization"
+  - Titulo: "Show HN: ContainerFlow – Real-time Docker architecture visualization"
 - [ ] **Twitter/X**: Thread con GIF y features
 - [ ] **Dev.to**: Articulo sobre como se construyo
 - [ ] **Discord**: Servidores de Docker, Bun, React

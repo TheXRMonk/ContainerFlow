@@ -30,7 +30,7 @@ export function LoginScreen({ onAuth }: LoginScreenProps) {
     setLogLines([]);
 
     hackerLog([
-      "$ flowteon connect --auth",
+      "$ containerflow connect --auth",
       "> Establishing secure connection...",
       "> Validating AUTH_TOKEN...",
     ], async () => {
@@ -69,12 +69,12 @@ export function LoginScreen({ onAuth }: LoginScreenProps) {
         {/* Logo + Title */}
         <img
           src="/alteonx-logo.webp"
-          alt="Flowteon"
+          alt="ContainerFlow"
           className={`w-16 h-16 transition-all duration-700 ${connected ? "scale-110" : ""}`}
           style={{ filter: "brightness(0) saturate(100%) invert(45%) sepia(85%) saturate(2000%) hue-rotate(200deg) brightness(1.1)" }}
         />
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-white tracking-wide">Flowteon</h1>
+          <h1 className="text-2xl font-bold text-white tracking-wide">ContainerFlow</h1>
           <span className="text-xs text-cyan-400 tracking-widest uppercase">AlteonX</span>
         </div>
 

@@ -45,6 +45,7 @@ export function createStatsStore(): StatsStore {
         }
       }
       if (changed) {
+        current = new Map(current);
         globalVersion++;
         notify();
       }
