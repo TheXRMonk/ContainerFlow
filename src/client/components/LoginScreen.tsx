@@ -68,7 +68,7 @@ export function LoginScreen({ onAuth }: LoginScreenProps) {
       <div className="flex flex-col items-center gap-6 w-80">
         {/* Logo + Title */}
         <img
-          src="/alteonx-logo.png"
+          src="/alteonx-logo.webp"
           alt="Flowteon"
           className={`w-16 h-16 transition-all duration-700 ${connected ? "scale-110" : ""}`}
           style={{ filter: "brightness(0) saturate(100%) invert(45%) sepia(85%) saturate(2000%) hue-rotate(200deg) brightness(1.1)" }}

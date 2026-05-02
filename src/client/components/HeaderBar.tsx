@@ -43,7 +43,7 @@ export function HeaderBar({
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2.5">
           <img
-            src="/alteonx-logo.png"
+            src="/alteonx-logo.webp"
             alt="Flowteon"
             className="w-7 h-7"
             style={{ filter: "brightness(0) saturate(100%) invert(45%) sepia(85%) saturate(2000%) hue-rotate(200deg) brightness(1.1)" }}

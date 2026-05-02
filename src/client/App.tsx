@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback, useSyncExternalStore, startTransition } from "react";
 import {
   ReactFlow,
   Background,
@@ -15,6 +15,7 @@ import "@xyflow/react/dist/style.css";
 import { ServiceNode } from "./nodes/ServiceNode";
 import { GroupNode } from "./nodes/GroupNode";
 import { useDocker } from "./hooks/useDocker";
+import { createStatsStore, StatsStoreContext } from "./hooks/useStatsStore";
 import { buildLayout, computeEdges, NODE_WIDTH, NODE_HEIGHT, GROUP_PADDING, GROUP_HEADER } from "./engine/layout";
 import { DetailPanel } from "./panels/DetailPanel";
 import { LoginScreen } from "./components/LoginScreen";
@@ -43,20 +44,17 @@ export default function App() {
   const [needsAuth, setNeedsAuth] = useState<boolean | null>(null);
 
   useEffect(() => {
-    fetch("/api/health").then((r) => {
+    const saved = getToken();
+    const headers: Record<string, string> = {};
+    if (saved) headers["Authorization"] = `Bearer ${saved}`;
+
+    fetch("/api/health", { headers }).then((r) => {
       if (r.ok) {
         setNeedsAuth(false);
-        setAuthToken("");
+        setAuthToken(saved || "");
       } else if (r.status === 401) {
-        const saved = getToken();
-        if (saved) {
-          fetch("/api/health", { headers: { Authorization: `Bearer ${saved}` } }).then((r2) => {
-            if (r2.ok) { setAuthToken(saved); setNeedsAuth(false); }
-            else { localStorage.removeItem("df:token"); setNeedsAuth(true); }
-          });
-        } else {
-          setNeedsAuth(true);
-        }
+        if (saved) localStorage.removeItem("df:token");
+        setNeedsAuth(true);
       }
     }).catch(() => setNeedsAuth(false));
   }, []);
@@ -68,11 +66,15 @@ export default function App() {
 }
 
 function Dashboard({ token }: { token: string }) {
-  const { services, connections, stats, statsVersion, events, connected, logLines, sendMessage, clearLogLines, setProcessing, getLogsSince } = useDocker(token);
+  const statsStore = useMemo(() => createStatsStore(), []);
+  const savedPositions = useRef<Record<string, { x: number; y: number }>>({});
+  const onPositions = useCallback((pos: Record<string, { x: number; y: number }>) => {
+    savedPositions.current = pos;
+  }, []);
+  const { services, connections, stats, events, connected, logLines, sendMessage, clearLogLines, setProcessing, getLogsSince } = useDocker(token, statsStore, onPositions);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const initialLayoutDone = useRef(false);
-  const savedPositions = useRef<Record<string, { x: number; y: number }>>({});
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(loadFilter);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [detailService, setDetailService] = useState<Service | null>(null);
@@ -90,27 +92,21 @@ function Dashboard({ token }: { token: string }) {
   const [panelClosing, setPanelClosing] = useState(false);
   const closeDetail = useCallback(() => {
     if (panelClosing) return;
-    setPanelClosing(true);
-    setSelectedNode(null);
+    startTransition(() => {
+      setPanelClosing(true);
+      setSelectedNode(null);
+    });
     if (prevViewport.current && reactFlowRef.current) {
       reactFlowRef.current.setViewport(prevViewport.current, { duration: 400 });
       prevViewport.current = null;
     }
     setTimeout(() => {
-      setDetailService(null);
-      setPanelClosing(false);
+      startTransition(() => {
+        setDetailService(null);
+        setPanelClosing(false);
+      });
     }, 400);
   }, [panelClosing]);
-
-  // Load saved positions
-  useEffect(() => {
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    fetch("/api/positions", { headers })
-      .then((r) => r.json())
-      .then((data) => { savedPositions.current = data || {}; })
-      .catch(() => {});
-  }, [token]);
 
   // Save positions (debounced)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -132,6 +128,9 @@ function Dashboard({ token }: { token: string }) {
     }, 500);
   }, [token]);
 
+  // Ref to hold the edge recomputation function (avoids circular deps with filteredConnections)
+  const recomputeEdgesRef = useRef<(nodes: Node[]) => void>(() => {});
+
   const handleNodesChange = useCallback((changes: NodeChange<Node>[]) => {
     onNodesChange(changes);
 
@@ -140,46 +139,60 @@ function Dashboard({ token }: { token: string }) {
 
     const isDragEnd = changes.some((c) => c.type === "position" && (c as any).dragging === false);
 
+    // Skip expensive clamping/resizing during drag — only run on drag end
+    if (!isDragEnd) return;
+
     setNodes((prev) => {
       let changed = false;
-      let nodes = [...prev];
+      const nodes = new Array<Node>(prev.length);
+      for (let i = 0; i < prev.length; i++) nodes[i] = prev[i];
 
       // Clamp Y only
-      nodes = nodes.map((n) => {
-        if (!n.parentId) return n;
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        if (!n.parentId) continue;
         const clampedY = Math.max(MIN_Y, n.position.y);
         if (clampedY !== n.position.y) {
           changed = true;
-          return { ...n, position: { x: n.position.x, y: clampedY } };
+          nodes[i] = { ...n, position: { x: n.position.x, y: clampedY } };
         }
-        return n;
-      });
+      }
 
-      // Keep leftmost child at MIN_X
-      const groupIds = [...new Set(nodes.filter((n) => n.parentId).map((n) => n.parentId!))];
-      for (const gid of groupIds) {
-        const kids = nodes.filter((n) => n.parentId === gid);
-        const minChildX = Math.min(...kids.map((k) => k.position.x));
+      // Keep leftmost child at MIN_X — build parent→children index once
+      const childrenByParent = new Map<string, number[]>();
+      for (let i = 0; i < nodes.length; i++) {
+        const pid = nodes[i].parentId;
+        if (!pid) continue;
+        let arr = childrenByParent.get(pid);
+        if (!arr) { arr = []; childrenByParent.set(pid, arr); }
+        arr.push(i);
+      }
+
+      for (const [gid, kidIdxs] of childrenByParent) {
+        let minChildX = Infinity;
+        for (const ki of kidIdxs) minChildX = Math.min(minChildX, nodes[ki].position.x);
         if (minChildX !== MIN_X) {
           const shift = minChildX - MIN_X;
           changed = true;
-          nodes = nodes.map((n) => {
-            if (n.id === gid) return { ...n, position: { x: n.position.x + shift, y: n.position.y } };
-            if (n.parentId === gid) return { ...n, position: { x: n.position.x - shift, y: n.position.y } };
-            return n;
-          });
+          for (let i = 0; i < nodes.length; i++) {
+            const n = nodes[i];
+            if (n.id === gid) nodes[i] = { ...n, position: { x: n.position.x + shift, y: n.position.y } };
+            else if (n.parentId === gid) nodes[i] = { ...n, position: { x: n.position.x - shift, y: n.position.y } };
+          }
         }
       }
 
       // Resize groups to fit children
-      nodes = nodes.map((n) => {
-        if (!n.id.startsWith("group-")) return n;
-        const kids = nodes.filter((c) => c.parentId === n.id);
-        if (kids.length === 0) return n;
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        if (!n.id.startsWith("group-")) continue;
+        const kidIdxs = childrenByParent.get(n.id);
+        if (!kidIdxs || kidIdxs.length === 0) continue;
 
         let maxRight = 0;
         let maxBottom = 0;
-        for (const k of kids) {
+        for (const ki of kidIdxs) {
+          const k = nodes[ki];
           maxRight = Math.max(maxRight, k.position.x + NODE_W + G_PAD);
           maxBottom = Math.max(maxBottom, k.position.y + NODE_H + G_PAD);
         }
@@ -193,12 +206,12 @@ function Dashboard({ token }: { token: string }) {
 
         if (newW !== curW || newH !== curH) {
           changed = true;
-          return { ...n, style: { ...n.style, width: newW, height: newH } };
+          nodes[i] = { ...n, style: { ...n.style, width: newW, height: newH } };
         }
-        return n;
-      });
+      }
 
-      if (isDragEnd) savePositions(nodes);
+      savePositions(nodes);
+      recomputeEdgesRef.current(nodes);
       return changed ? nodes : prev;
     });
   }, [onNodesChange, setNodes, savePositions]);
@@ -236,7 +249,7 @@ function Dashboard({ token }: { token: string }) {
       return;
     }
 
-    const { nodes: newNodes } = buildLayout(filteredServices, filteredConnections, stats);
+    const { nodes: newNodes } = buildLayout(filteredServices, filteredConnections);
 
     if (!initialLayoutDone.current) {
       let positioned = newNodes.map((n) => {
@@ -318,12 +331,12 @@ function Dashboard({ token }: { token: string }) {
         return result;
       });
     }
-  }, [filteredServices, filteredConnections, statsVersion]);
+  }, [filteredServices, filteredConnections]);
 
-  // Recompute edges + handles when nodes move
-  useEffect(() => {
-    if (nodes.length === 0 || filteredConnections.length === 0) return;
-    const { edges: newEdges, activeHandles } = computeEdges(nodes, filteredConnections);
+  // Recompute edges + handles on drag end (not every pixel)
+  const recomputeEdges = useCallback((currentNodes: Node[]) => {
+    if (currentNodes.length === 0 || filteredConnections.length === 0) return;
+    const { edges: newEdges, activeHandles } = computeEdges(currentNodes, filteredConnections);
     setEdges(newEdges);
     setNodes((prev) =>
       prev.map((n) => {
@@ -334,7 +347,8 @@ function Dashboard({ token }: { token: string }) {
         return { ...n, data: { ...n.data, activeHandles: handles } };
       })
     );
-  }, [nodes.map((n) => `${n.id}:${n.position.x}:${n.position.y}`).join(","), filteredConnections]);
+  }, [filteredConnections, setEdges, setNodes]);
+  recomputeEdgesRef.current = recomputeEdges;
 
   // Flash nodes on Docker events
   useEffect(() => {
@@ -362,17 +376,26 @@ function Dashboard({ token }: { token: string }) {
     }, 1200);
   }, [events]);
 
-  // Total resource consumption
+  // Total resource consumption (subscribes to all stats changes via the store directly)
+  const allStats = useSyncExternalStore(
+    useCallback((cb: () => void) => statsStore.subscribe(cb), [statsStore]),
+    useCallback(() => statsStore.getSnapshot(), [statsStore])
+  );
   const totalStats = useMemo(() => {
     let cpu = 0;
     let mem = 0;
     for (const svc of filteredServices) {
-      const s = stats.get(svc.uid);
+      const s = allStats.get(svc.uid);
       if (s) { cpu += s.cpu; mem += s.mem_mb; }
     }
     return { cpu, mem };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredServices, statsVersion]);
+  }, [filteredServices, allStats]);
+
+  // Pre-filter log lines for the detail panel to avoid passing the full array
+  const panelLogLines = useMemo(
+    () => detailService ? logLines.filter((l) => l.container === detailService.id) : [],
+    [logLines, detailService]
+  );
 
   // Dim nodes/edges when detail panel is open
   const dimmedNodes = useMemo(() => {
@@ -380,9 +403,10 @@ function Dashboard({ token }: { token: string }) {
     return nodes.map((n) => {
       if (n.type !== "service") return n;
       const isSelected = n.id === selectedNode;
+      if (isSelected) return n;
       return {
         ...n,
-        style: { ...n.style, opacity: isSelected ? 1 : 0.25, transition: "opacity 0.4s ease" },
+        style: { ...n.style, opacity: 0.25, transition: "opacity 0.4s ease" },
         data: { ...n.data, activeHandles: [] },
       };
     });
@@ -399,6 +423,7 @@ function Dashboard({ token }: { token: string }) {
   }, [edges, selectedNode]);
 
   return (
+    <StatsStoreContext.Provider value={statsStore}>
     <div className="h-screen w-screen bg-slate-900 flex flex-col">
       <HeaderBar
         services={services}
@@ -411,7 +436,17 @@ function Dashboard({ token }: { token: string }) {
         totalStats={totalStats}
       />
 
+      {/* Loading skeleton */}
+      {services.length === 0 && (
+        <div className="flex-1 min-h-0 relative m-2 rounded-xl overflow-hidden ring-1 ring-slate-700/60 shadow-[inset_0_2px_12px_rgba(0,0,0,0.5)] flex items-center justify-center gap-8 bg-slate-900">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="w-[220px] h-[140px] rounded-xl bg-slate-800/60 animate-pulse" />
+          ))}
+        </div>
+      )}
+
       {/* Canvas — inset */}
+      {services.length > 0 && (
       <div className="flex-1 min-h-0 relative m-2 rounded-xl overflow-hidden ring-1 ring-slate-700/60 shadow-[inset_0_2px_12px_rgba(0,0,0,0.5)]">
         <ReactFlow
           onInit={(instance) => { reactFlowRef.current = instance; }}
@@ -453,8 +488,11 @@ function Dashboard({ token }: { token: string }) {
 
             reactFlowRef.current?.setViewport({ x: targetX, y: targetY, zoom }, { duration: 400 });
 
-            setSelectedNode(node.id);
-            setDetailService(svc);
+            // Mark as non-urgent so the browser paints before React reconciles
+            startTransition(() => {
+              setSelectedNode(node.id);
+              setDetailService(svc);
+            });
           }}
           onPaneClick={() => {
             if (detailService) closeDetail();
@@ -489,7 +527,7 @@ function Dashboard({ token }: { token: string }) {
           <DetailPanel
             service={filteredServices.find((s) => s.uid === detailService.uid) || detailService}
             stats={stats.get(detailService.uid)}
-            logLines={logLines}
+            logLines={panelLogLines}
             token={token}
             closing={panelClosing}
             onClose={closeDetail}
@@ -502,6 +540,8 @@ function Dashboard({ token }: { token: string }) {
           />
         )}
       </div>
+      )}
     </div>
+    </StatsStoreContext.Provider>
   );
 }

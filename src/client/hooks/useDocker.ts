@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { Service, Connection, Stats, DockerEvent, LogLine, WSMessage } from "../../shared/types";
+import type { StatsStore } from "./useStatsStore";
 
 function arraysEqual(a: Service[], b: Service[]): boolean {
   if (a.length !== b.length) return false;
@@ -10,11 +11,10 @@ function arraysEqual(a: Service[], b: Service[]): boolean {
   return true;
 }
 
-export function useDocker(token = "") {
+export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (pos: Record<string, { x: number; y: number }>) => void) {
   const [services, setServices] = useState<Service[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const statsRef = useRef<Map<string, Stats>>(new Map());
-  const [statsVersion, setStatsVersion] = useState(0);
   const [events, setEvents] = useState<DockerEvent[]>([]);
   const [logLines, setLogLines] = useState<LogLine[]>([]);
   // Processing state: uid → { expected state, start time, min duration before clearing }
@@ -23,18 +23,20 @@ export function useDocker(token = "") {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Initial HTTP fetch so data loads even if WS is slow
+  // Single init call: services + connections + positions
   useEffect(() => {
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
-    Promise.all([
-      fetch("/api/services", { headers }).then((r) => r.ok ? r.json() : []),
-      fetch("/api/connections", { headers }).then((r) => r.ok ? r.json() : []),
-    ]).then(([svcs, conns]) => {
-      setServices((prev) => prev.length === 0 ? svcs : prev);
-      setConnections((prev) => prev.length === 0 ? conns : prev);
-    }).catch(() => {});
+    fetch("/api/init", { headers })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data) return;
+        setServices((prev) => prev.length === 0 ? data.services : prev);
+        setConnections((prev) => prev.length === 0 ? data.connections : prev);
+        if (onPositions) onPositions(data.positions || {});
+      })
+      .catch(() => {});
   }, [token]);
 
   const connect = useCallback(() => {
@@ -120,15 +122,12 @@ export function useDocker(token = "") {
             });
             break;
           case "stats": {
-            let changed = false;
             for (const s of msg.data) {
-              const existing = statsRef.current.get(s.service);
-              if (!existing || existing.cpu !== s.cpu || existing.mem_mb !== s.mem_mb) {
-                statsRef.current.set(s.service, s);
-                changed = true;
-              }
+              statsRef.current.set(s.service, s);
             }
-            if (changed) setStatsVersion((v) => v + 1);
+            if (statsStore) {
+              statsStore.update(statsRef.current);
+            }
             break;
           }
           case "docker_event":
@@ -198,5 +197,5 @@ export function useDocker(token = "") {
     return actionTimestamps.current.get(uid);
   }, []);
 
-  return { services, connections, stats: statsRef.current, statsVersion, events, connected, logLines, sendMessage, clearLogLines, setProcessing, getLogsSince };
+  return { services, connections, stats: statsRef.current, events, connected, logLines, sendMessage, clearLogLines, setProcessing, getLogsSince };
 }

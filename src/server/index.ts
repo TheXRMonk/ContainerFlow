@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { cors } from "hono/cors";
+import { compress } from "hono/compress";
 import path from "path";
 import fs from "fs";
 import { docker, discoverServices, discoverConnections, getContainerLogs, streamContainerLogs } from "./docker";
@@ -8,6 +9,9 @@ import { pollStats, watchDockerEvents } from "./watcher";
 import type { Service, WSMessage } from "../shared/types";
 
 const app = new Hono();
+
+// ── Compression ──
+app.use("*", compress());
 
 // ── CORS ──
 app.use("/api/*", cors());
@@ -33,7 +37,7 @@ const WS_RECONNECT_MS = 3000;
 if (AUTH_TOKEN) {
   app.use("*", async (c, next) => {
     // Skip static assets and auth page
-    if (c.req.path === "/" || c.req.path.startsWith("/assets") || c.req.path.endsWith(".png") || c.req.path.endsWith(".ico")) return next();
+    if (c.req.path === "/" || c.req.path.startsWith("/assets") || c.req.path.endsWith(".png") || c.req.path.endsWith(".webp") || c.req.path.endsWith(".ico")) return next();
     if (c.req.path === "/api/auth") return next();
 
     const token = c.req.header("Authorization")?.replace("Bearer ", "");
@@ -55,6 +59,19 @@ app.get("/api/connections", async (c) => {
 });
 
 app.get("/api/health", (c) => c.json({ ok: true, mode: ALL ? "all" : "filtered", projects: PROJECTS }));
+
+// ── Combined init endpoint (services + connections + positions in one call) ──
+app.get("/api/init", async (c) => {
+  const services = await discoverServices(ALL, PROJECTS);
+  const connections = await discoverConnections(services);
+  let positions: Record<string, any> = {};
+  try {
+    if (fs.existsSync(POSITIONS_FILE)) {
+      positions = JSON.parse(fs.readFileSync(POSITIONS_FILE, "utf-8"));
+    }
+  } catch {}
+  return c.json({ services, connections, positions });
+});
 
 // ── Container actions ──
 app.post("/api/containers/:id/stop", async (c) => {
@@ -190,6 +207,18 @@ app.put("/api/positions", async (c) => {
     return c.json({ ok: true });
   } catch {
     return c.json({ error: "Failed to save" }, 500);
+  }
+});
+
+// ── Cache headers for static assets ──
+app.use("/*", async (c, next) => {
+  await next();
+  const p = c.req.path;
+  if (p.startsWith("/assets/")) {
+    // Hashed filenames — cache forever
+    c.header("Cache-Control", "public, max-age=31536000, immutable");
+  } else if (p.endsWith(".webp") || p.endsWith(".png") || p.endsWith(".ico")) {
+    c.header("Cache-Control", "public, max-age=86400");
   }
 });
 

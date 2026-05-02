@@ -1,5 +1,6 @@
 import { memo, useState, useEffect } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { useNodeStats } from "../hooks/useStatsStore";
 import {
   Database,
   Zap,
@@ -23,7 +24,6 @@ import {
   AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
-import type { Stats } from "../../shared/types";
 
 interface ServiceNodeData {
   label: string;
@@ -31,7 +31,6 @@ interface ServiceNodeData {
   state: string;
   ports: { host: number; container: number }[];
   project: string;
-  stats: Stats | null;
   flash?: string;
   id?: string;
   activeHandles?: string[];
@@ -113,8 +112,9 @@ function ProcessingTimer({ startedAt }: { startedAt: number }) {
   return <span className="text-[10px] font-mono text-yellow-400 ml-1">{elapsed}s</span>;
 }
 
-export const ServiceNode = memo(function ServiceNode({ data }: NodeProps) {
+export const ServiceNode = memo(function ServiceNode({ data, id }: NodeProps) {
   const d = data as unknown as ServiceNodeData;
+  const nodeStats = useNodeStats(id);
   const s = stateStyles[d.state] || stateStyles.exited;
   const { Icon, color: iconColor } = guessIcon(d.image, d.label);
   const flashClass = d.flash || "";
@@ -137,7 +137,7 @@ export const ServiceNode = memo(function ServiceNode({ data }: NodeProps) {
       title={`${d.label} (${d.state})\nImage: ${d.image}\nID: ${d.id || ""}\nPorts: ${d.ports?.map((p) => `${p.host}:${p.container}`).join(", ") || "none"}`}
       className={`relative rounded-xl border ${s.border} ${s.bg} backdrop-blur-sm
                   shadow-lg shadow-black/30 p-4 min-w-[220px] ring-2 ${s.ring}
-                  transition-all duration-300 ${flashClass}`}
+                  transition-[opacity,box-shadow] duration-300 ${flashClass}`}
     >
       {/* Top handles — left offset, transform centered horizontally */}
       {offsets.map((o, i) => (
@@ -204,23 +204,23 @@ export const ServiceNode = memo(function ServiceNode({ data }: NodeProps) {
       )}
 
       {/* Stats */}
-      {d.stats && (
+      {nodeStats && (
         <div className="mt-2 space-y-1.5">
           <div className="flex justify-between text-[11px] text-slate-400">
-            <span>CPU {d.stats.cpu.toFixed(1)}%</span>
-            <span>MEM {d.stats.mem_mb.toFixed(0)}MB</span>
+            <span>CPU {nodeStats.cpu.toFixed(1)}%</span>
+            <span>MEM {nodeStats.mem_mb.toFixed(0)}MB</span>
           </div>
           <div className="flex gap-1.5">
             <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
               <div
                 className="h-full bg-cyan-500/60 rounded-full transition-all duration-700"
-                style={{ width: `${Math.min(d.stats.cpu, 100)}%` }}
+                style={{ width: `${Math.min(nodeStats.cpu, 100)}%` }}
               />
             </div>
             <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
               <div
                 className="h-full bg-violet-500/60 rounded-full transition-all duration-700"
-                style={{ width: `${Math.min(d.stats.mem_percent, 100)}%` }}
+                style={{ width: `${Math.min(nodeStats.mem_percent, 100)}%` }}
               />
             </div>
           </div>

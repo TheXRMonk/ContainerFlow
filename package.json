@@ -23,17 +23,17 @@
     "zod": "^3"
   },
   "devDependencies": {
+    "@dagrejs/dagre": "^1",
+    "@tailwindcss/vite": "^4",
     "@types/dockerode": "^3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
+    "@xyflow/react": "^12",
     "concurrently": "^9",
     "react": "^19",
     "react-dom": "^19",
-    "@xyflow/react": "^12",
-    "@dagrejs/dagre": "^1",
     "tailwindcss": "^4",
-    "@tailwindcss/vite": "^4",
     "typescript": "^5",
     "vite": "^6"
   }

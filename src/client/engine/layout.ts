@@ -1,5 +1,5 @@
 import type { Node, Edge } from "@xyflow/react";
-import type { Service, Connection, Stats } from "../../shared/types";
+import type { Service, Connection } from "../../shared/types";
 
 export const NODE_WIDTH = 240;
 export const NODE_HEIGHT = 160;
@@ -67,8 +67,7 @@ export interface LayoutResult {
 
 export function buildLayout(
   services: Service[],
-  connections: Connection[],
-  statsMap: Map<string, Stats>
+  connections: Connection[]
 ): LayoutResult {
   if (services.length === 0) return { nodes: [], edges: [] };
 
@@ -162,7 +161,6 @@ export function buildLayout(
         data: {
           ...svc,
           label: svc.name,
-          stats: statsMap.get(svc.uid) || null,
         },
       });
     });

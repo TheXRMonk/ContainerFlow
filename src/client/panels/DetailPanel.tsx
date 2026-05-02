@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, startTransition } from "react";
 import { X, Pause, Play, Square, RotateCw, Hammer, Trash2, Terminal, Network, Globe, Info, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check, Loader2, AlertTriangle, Maximize2 } from "lucide-react";
 import type { Service, Stats, LogLine, WSMessage, Connection } from "../../shared/types";
 
@@ -215,7 +215,19 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
     setAutoScroll((prev) => prev === atBottom ? prev : atBottom);
   }, []);
 
-  const allLines = [...initialLogs, ...logLines.filter((l) => l.container === service.id)];
+  const allLines = useMemo(
+    () => [...initialLogs, ...logLines],
+    [initialLogs, logLines]
+  );
+
+  const connectedSvcs = useMemo(() => {
+    const connectedUids = new Set<string>();
+    for (const c of connections) {
+      if (c.from === service.uid) connectedUids.add(c.to);
+      if (c.to === service.uid) connectedUids.add(c.from);
+    }
+    return services.filter((s) => connectedUids.has(s.uid));
+  }, [connections, services, service.uid]);
 
   const isCrashed = (service.state as string) === "crashed";
   const stateColor = isProcessing ? "text-yellow-400" :
@@ -442,15 +454,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
               )}
 
               {/* Connected services */}
-              {(() => {
-                const connectedUids = new Set<string>();
-                for (const c of connections) {
-                  if (c.from === service.uid) connectedUids.add(c.to);
-                  if (c.to === service.uid) connectedUids.add(c.from);
-                }
-                const connectedSvcs = services.filter((s) => connectedUids.has(s.uid));
-                if (connectedSvcs.length === 0) return null;
-                return (
+              {connectedSvcs.length > 0 && (
                   <div>
                     <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">Connected to</span>
                     <div className="flex flex-wrap gap-1.5">
@@ -465,8 +469,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                       })}
                     </div>
                   </div>
-                );
-              })()}
+              )}
             </div>
           )}
 
@@ -741,7 +744,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                 {autoScroll ? <Pause size={12} /> : <Play size={12} />}
               </button>
               <button
-                onClick={() => setLogsModal(true)}
+                onClick={() => startTransition(() => setLogsModal(true))}
                 className="p-1 rounded hover:bg-slate-700/60 text-slate-400 hover:text-slate-200 transition-colors"
                 title="Open logs fullscreen"
               >
@@ -824,7 +827,12 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
             ref={modalScrollRef}
             className="flex-1 overflow-y-auto overflow-x-auto font-mono text-xs leading-5 px-6 py-3"
           >
-            {allLines.map((l, i) => (
+            {allLines.length > 500 && (
+              <div className="text-slate-600 text-center py-2 text-[11px]">
+                {allLines.length - 500} lines hidden
+              </div>
+            )}
+            {(allLines.length > 500 ? allLines.slice(-500) : allLines).map((l, i) => (
               <div key={i} className="flex gap-0 hover:bg-slate-800/40">
                 {l.timestamp && (
                   <span className="text-slate-600 shrink-0 select-none pr-3 whitespace-nowrap">
