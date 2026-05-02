@@ -436,17 +436,7 @@ function Dashboard({ token }: { token: string }) {
         totalStats={totalStats}
       />
 
-      {/* Loading skeleton */}
-      {services.length === 0 && (
-        <div className="flex-1 min-h-0 relative m-2 rounded-xl overflow-hidden ring-1 ring-slate-700/60 shadow-[inset_0_2px_12px_rgba(0,0,0,0.5)] flex items-center justify-center gap-8 bg-slate-900">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="w-[220px] h-[140px] rounded-xl bg-slate-800/60 animate-pulse" />
-          ))}
-        </div>
-      )}
-
       {/* Canvas — inset */}
-      {services.length > 0 && (
       <div className="flex-1 min-h-0 relative m-2 rounded-xl overflow-hidden ring-1 ring-slate-700/60 shadow-[inset_0_2px_12px_rgba(0,0,0,0.5)]">
         <ReactFlow
           onInit={(instance) => { reactFlowRef.current = instance; }}
@@ -540,7 +530,6 @@ function Dashboard({ token }: { token: string }) {
           />
         )}
       </div>
-      )}
     </div>
     </StatsStoreContext.Provider>
   );

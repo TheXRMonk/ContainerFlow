@@ -1,6 +1,6 @@
 # Alteonx DockerFlow
 
-Herramienta open source para visualizar arquitecturas Docker en tiempo real con partículas animadas que muestran el flujo de datos entre servicios.
+Herramienta open source para visualizar arquitecturas Docker en tiempo real.
 
 ```
 git clone github.com/user/alteonx-dockerflow
@@ -24,7 +24,7 @@ claude mcp add alteonx-dockerflow -- bun run src/mcp.ts
 | **Frontend** | React 19 + @xyflow/react 12 | Librería de grafos más madura, nodos custom, edges custom, minimap |
 | **Styling** | Tailwind v4 | Utility-first, tree-shaking agresivo, sin runtime |
 | **Real-time** | Bun WebSocket | Nativo en Bun, zero dependencias, más rápido que socket.io |
-| **Animaciones** | SVG animateMotion + CSS | Sin librerías extra, GPU-accelerated, zero overhead |
+| **Animaciones** | CSS transitions + keyframes | Sin librerías extra, GPU-accelerated, zero overhead |
 | **Docker API** | dockerode | Estándar de facto, tipado, streams |
 | **MCP** | @modelcontextprotocol/sdk | SDK oficial, stdio transport |
 | **Build** | Vite 6 | HMR instantáneo, tree-shaking, build optimizado |
@@ -81,13 +81,13 @@ claude mcp add alteonx-dockerflow -- bun run src/mcp.ts
 │  WS   /ws            │       │   • get_stats            │
 │   → push eventos     │       │   • get_logs             │
 │   → push stats       │       │   • restart_service      │
-│                      │       │   • list_flows           │
-│  Docker watcher:     │       │   • simulate_flow        │
-│   • listContainers   │       │   • create_flow          │
-│   • getEvents stream │       │                          │
-│   • stats polling    │       │  Resources:              │
-│                      │       │   • docker://services    │
-│  Para: humanos 👀    │       │   • docker://flows       │
+│                      │       │   • inspect_service      │
+│  Docker watcher:     │       │   • get_networks         │
+│   • listContainers   │       │                          │
+│   • getEvents stream │       │  Resources:              │
+│   • stats polling    │       │   • docker://services    │
+│                      │       │                          │
+│  Para: humanos 👀    │       │                          │
 └──────────────────────┘       │                          │
                                │  Para: Claude Code 🤖   │
                                └──────────────────────────┘
@@ -103,8 +103,7 @@ alteonx-dockerflow/
 │   ├── server/
 │   │   ├── index.ts            # Hono server + WebSocket
 │   │   ├── docker.ts           # Docker API wrapper (dockerode)
-│   │   ├── watcher.ts          # Docker events stream + stats polling
-│   │   └── flows.ts            # Flow engine (partículas)
+│   │   └── watcher.ts          # Docker events stream + stats polling
 │   ├── mcp/
 │   │   └── index.ts            # MCP server (stdio)
 │   ├── client/
@@ -112,22 +111,16 @@ alteonx-dockerflow/
 │   │   ├── main.tsx            # Entry point
 │   │   ├── nodes/
 │   │   │   ├── ServiceNode.tsx # Nodo de container
-│   │   │   └── ExternalNode.tsx# Nodo externo (APIs, users)
-│   │   ├── edges/
-│   │   │   └── ParticleEdge.tsx# Edge con partículas animadas
+│   │   │   └── GroupNode.tsx   # Nodo grupo (compose project)
 │   │   ├── panels/
-│   │   │   ├── FlowPanel.tsx   # Panel de control de flows
-│   │   │   ├── StatsPanel.tsx  # Panel de stats CPU/MEM
-│   │   │   └── LogPanel.tsx    # Panel de logs
+│   │   │   └── DetailPanel.tsx # Panel lateral de detalles
 │   │   ├── hooks/
 │   │   │   ├── useDocker.ts    # WebSocket hook
-│   │   │   └── useFlows.ts     # Flow state management
+│   │   │   └── useStatsStore.ts# Stats por nodo (useSyncExternalStore)
 │   │   └── engine/
-│   │       ├── particles.ts    # Motor de partículas
-│   │       └── layout.ts       # Auto-layout con dagre
+│   │       └── layout.ts       # Auto-layout
 │   └── shared/
 │       └── types.ts            # Tipos compartidos server/client
-├── flows.yaml                  # Config de flows (opcional)
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
@@ -397,7 +390,7 @@ export function watchDockerEvents(onEvent: (e: DockerEvent) => void) {
 }
 ```
 
-**Partículas gratis:** cada start/stop/restart se ve como un pulso animado en el nodo.
+Cada start/stop/restart se ve como un pulso animado (flash) en el nodo.
 
 ### 4. Stats polling
 
@@ -431,185 +424,6 @@ export async function pollStats(services: Service[]): Promise<Stats[]> {
 ```
 
 ---
-
-## Flows (simulaciones visuales)
-
-Los flows son recorridos animados que muestran cómo viaja una request o evento por la arquitectura. Son **puramente visuales** y sirven para entender y presentar tu sistema.
-
-### Dos modos
-
-**Modo simulación (MVP, funciona para todos):**
-- El usuario define un path: "request pasa por nginx → backend → redis → db"
-- Click en "simular" → partícula recorre esa ruta con animación
-- Como un diagrama de secuencia pero animado y en el grafo real
-- No necesita conectar nada, solo definir el camino
-
-**Modo eventos reales (avanzado, opcional):**
-- Requiere un probe (middleware) en los servicios
-- El probe emite eventos a Redis/WebSocket
-- El dashboard escucha y dispara partículas automáticamente
-- Para fase 2+, no MVP
-
-### Configuración de flows — `flows.yaml`
-
-```yaml
-# flows.yaml — Define recorridos visuales en tu arquitectura
-# Cada flow es un camino que una operación recorre entre servicios
-
-flows:
-  # Ejemplo genérico: request HTTP
-  api_request:
-    name: "API Request"
-    description: "Request del usuario al backend"
-    color: "#3b82f6"                  # azul
-    speed: 0.8                        # segundos por edge
-    path: [nginx, backend, redis, db, backend, nginx]
-
-  # Ejemplo: background job
-  background_job:
-    name: "Background Job"
-    description: "Tarea programada del worker"
-    color: "#ec4899"                  # rosa
-    speed: 1.0
-    path: [redis, worker, db, worker]
-
-  # Ejemplo: cache flow
-  cache_hit:
-    name: "Cache Hit"
-    description: "Request servida desde cache"
-    color: "#22c55e"                  # verde
-    speed: 0.5
-    path: [nginx, backend, redis, backend, nginx]
-
-  cache_miss:
-    name: "Cache Miss"
-    description: "Cache miss, va a DB"
-    color: "#f59e0b"                  # amarillo
-    speed: 0.8
-    path: [nginx, backend, redis, db, redis, backend, nginx]
-
-# Los nombres de servicios deben coincidir con el nombre del container
-# (com.docker.compose.service label o container name)
-
-settings:
-  particle_size: 5                    # radio en px
-  trail: true                         # estela detrás de la partícula
-  trail_opacity: 0.3
-  glow: true                          # efecto neón
-  max_particles: 50                   # máximo simultáneas
-  auto_simulate: false                # simular automáticamente en idle
-  auto_simulate_interval: 5           # segundos entre simulaciones auto
-```
-
-**Zero config posible:** sin `flows.yaml` el dashboard muestra la arquitectura estática con stats. Los flows son un addon visual opcional.
-
-### Motor de partículas
-
-```tsx
-// src/client/engine/particles.ts
-
-interface Particle {
-  id: string;
-  flowName: string;
-  color: string;
-  path: string[];              // lista de service names
-  currentStep: number;         // índice actual en path
-  progress: number;            // 0-1 progreso en el edge actual
-  label?: string;
-}
-
-class ParticleEngine {
-  particles: Particle[] = [];
-  private maxParticles = 50;
-
-  spawn(flow: Flow, label?: string) {
-    if (this.particles.length >= this.maxParticles) return;
-    this.particles.push({
-      id: crypto.randomUUID(),
-      flowName: flow.name,
-      color: flow.color,
-      path: flow.path,
-      currentStep: 0,
-      progress: 0,
-      label,
-    });
-  }
-
-  tick(deltaMs: number, speed: number) {
-    const step = deltaMs / (speed * 1000);
-    this.particles = this.particles.filter((p) => {
-      p.progress += step;
-      if (p.progress >= 1) {
-        p.currentStep++;
-        p.progress = 0;
-        // Llegó al final → flash en nodo destino → eliminar
-        if (p.currentStep >= p.path.length - 1) return false;
-      }
-      return true;
-    });
-  }
-}
-```
-
-### Partícula visual (SVG sobre React Flow edge)
-
-```tsx
-// src/client/edges/ParticleEdge.tsx
-import { BaseEdge, getSmoothStepPath, type EdgeProps } from "@xyflow/react";
-
-export function ParticleEdge({ id, sourceX, sourceY, targetX, targetY, ...props }: EdgeProps) {
-  const [path] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY });
-  const particles = useParticlesForEdge(id); // del engine
-
-  return (
-    <>
-      <BaseEdge id={id} path={path} style={{ stroke: "#334155", strokeWidth: 2 }} />
-      <svg>
-        <defs>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-        </defs>
-        {particles.map((p) => (
-          <g key={p.id}>
-            {/* Estela */}
-            <circle r="3" fill={p.color} opacity="0.3" filter="url(#glow)">
-              <animateMotion dur={`${p.speed}s`} path={path} keyPoints={`${p.progress};${p.progress}`} keyTimes="0;1" fill="freeze" />
-            </circle>
-            {/* Partícula principal */}
-            <circle r="5" fill={p.color} filter="url(#glow)">
-              <animateMotion dur={`${p.speed}s`} path={path} keyPoints={`${p.progress};${p.progress}`} keyTimes="0;1" fill="freeze" />
-            </circle>
-            {/* Label */}
-            {p.label && (
-              <text fill="#e2e8f0" fontSize="9" textAnchor="middle" dy="-14">
-                <animateMotion dur={`${p.speed}s`} path={path} keyPoints={`${p.progress};${p.progress}`} keyTimes="0;1" fill="freeze" />
-                {p.label}
-              </text>
-            )}
-          </g>
-        ))}
-      </svg>
-    </>
-  );
-}
-```
-
-### Panel de control de flows
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Flows                                               [⚙️]   │
-├──────────────────────────────────────────────────────────────┤
-│  ● API Request          0/min    [  ON  ]   [ ▶ Simular ]   │
-│  ● Cache Hit            0/min    [  ON  ]   [ ▶ Simular ]   │
-│  ● Cache Miss           0/min    [  ON  ]   [ ▶ Simular ]   │
-│  ● Background Job       0/min    [  ON  ]   [ ▶ Simular ]   │
-├──────────────────────────────────────────────────────────────┤
-│  [ ▶ Simular todos ]   [ ⏸ Pausar ]   [ + Nuevo flow ]     │
-└──────────────────────────────────────────────────────────────┘
-```
 
 ---
 
@@ -707,18 +521,8 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { discoverServices, discoverConnections } from "./docker";
 import { watchDockerEvents, pollStats } from "./watcher";
-import { FlowEngine } from "./flows";
-import { parse } from "yaml";
-import { readFileSync, existsSync } from "fs";
 
 const app = new Hono();
-const flowEngine = new FlowEngine();
-
-// Load flows if exists
-if (existsSync("flows.yaml")) {
-  const config = parse(readFileSync("flows.yaml", "utf-8"));
-  flowEngine.loadFlows(config.flows || []);
-}
 
 // Serve frontend
 app.use("/*", serveStatic({ root: "./dist" }));
@@ -726,12 +530,6 @@ app.use("/*", serveStatic({ root: "./dist" }));
 // REST endpoints (para MCP y fallback)
 app.get("/api/services", async (c) => c.json(await discoverServices()));
 app.get("/api/connections", async (c) => c.json(await discoverConnections()));
-app.get("/api/flows", (c) => c.json(flowEngine.getFlows()));
-app.post("/api/flows/:name/simulate", (c) => {
-  flowEngine.simulate(c.req.param("name"));
-  return c.json({ ok: true });
-});
-
 // WebSocket (Bun native)
 const clients = new Set<WebSocket>();
 
@@ -747,8 +545,7 @@ Bun.serve({
     open(ws) { clients.add(ws); },
     close(ws) { clients.delete(ws); },
     message(ws, msg) {
-      const data = JSON.parse(msg.toString());
-      if (data.type === "simulate") flowEngine.simulate(data.flow);
+      // Handle subscribe_logs, unsubscribe_logs, etc.
     },
   },
 });
@@ -770,12 +567,6 @@ setInterval(async () => {
   broadcast("connections", connections);
   broadcast("stats", stats);
 }, 3000);
-
-// Particle engine tick (60fps)
-setInterval(() => {
-  const particles = flowEngine.tick(16);
-  if (particles.length > 0) broadcast("particles", particles);
-}, 16);
 
 console.log(`Alteonx DockerFlow running on http://${HOST}:${PORT}`);
 ```
@@ -915,73 +706,6 @@ server.tool("get_networks",
   }
 );
 
-// ── Flow tools ──
-
-server.tool("list_flows",
-  "List configured flow simulations",
-  {},
-  async () => {
-    // Read flows.yaml
-    const { readFileSync, existsSync } = await import("fs");
-    const { parse } = await import("yaml");
-    if (!existsSync("flows.yaml")) {
-      return { content: [{ type: "text", text: "No flows.yaml found. Create one to define flow simulations." }] };
-    }
-    const config = parse(readFileSync("flows.yaml", "utf-8"));
-    const flows = Object.entries(config.flows || {}).map(([key, f]: [string, any]) => ({
-      id: key,
-      name: f.name,
-      color: f.color,
-      path: f.path.join(" → "),
-      description: f.description || "",
-    }));
-    return { content: [{ type: "text", text: JSON.stringify(flows, null, 2) }] };
-  }
-);
-
-server.tool("simulate_flow",
-  "Trigger a flow simulation on the dashboard",
-  { flow: z.string().describe("Flow ID from flows.yaml") },
-  async ({ flow }) => {
-    // POST to dashboard API
-    try {
-      await fetch(`http://localhost:9470/api/flows/${flow}/simulate`, { method: "POST" });
-      return { content: [{ type: "text", text: `Simulation triggered: ${flow}` }] };
-    } catch {
-      return { content: [{ type: "text", text: "Dashboard not running. Use start_dashboard first." }] };
-    }
-  }
-);
-
-server.tool("create_flow",
-  "Add a new flow simulation to flows.yaml",
-  {
-    id: z.string().describe("Unique flow ID (snake_case)"),
-    name: z.string().describe("Display name"),
-    color: z.string().describe("Hex color for the particle"),
-    path: z.array(z.string()).describe("Ordered list of service names the flow traverses"),
-    description: z.string().optional(),
-  },
-  async ({ id, name, color, path, description }) => {
-    const { readFileSync, writeFileSync, existsSync } = await import("fs");
-    const { parse, stringify } = await import("yaml");
-
-    const file = "flows.yaml";
-    const config = existsSync(file) ? parse(readFileSync(file, "utf-8")) : { flows: {}, settings: {} };
-
-    config.flows[id] = {
-      name,
-      description: description || "",
-      color,
-      speed: 0.8,
-      path,
-    };
-
-    writeFileSync(file, stringify(config));
-    return { content: [{ type: "text", text: `Flow "${name}" created: ${path.join(" → ")}` }] };
-  }
-);
-
 // ── Resources ──
 
 server.resource("services", "docker://services", async (uri) => ({
@@ -991,17 +715,6 @@ server.resource("services", "docker://services", async (uri) => ({
     text: JSON.stringify(await docker.listContainers({ all: true }), null, 2),
   }],
 }));
-
-server.resource("flows", "docker://flows", async (uri) => {
-  const { readFileSync, existsSync } = await import("fs");
-  return {
-    contents: [{
-      uri: uri.href,
-      mimeType: "text/yaml",
-      text: existsSync("flows.yaml") ? readFileSync("flows.yaml", "utf-8") : "# No flows configured",
-    }],
-  };
-});
 
 // ── Start ──
 
@@ -1023,8 +736,6 @@ claude mcp add alteonx-dockerflow -- bun run src/mcp/index.ts
 > "arranca el dashboard"                     → start_dashboard
 > "qué containers tengo?"                    → list_services
 > "cuánta RAM usa el backend?"               → get_stats
-> "crea un flow para mi login endpoint"      → create_flow
-> "simula el login flow"                     → simulate_flow
 > "muéstrame los logs de redis"              → get_logs
 ```
 
@@ -1130,15 +841,12 @@ AUTH_TOKEN=mi-clave-super-segura bun run src/server/index.ts
 
 | Tipo | Color | Uso |
 |---|---|---|
-| HTTP request | `#3b82f6` azul | Partículas de requests |
-| Cache | `#f59e0b` amarillo | Redis hit/miss/invalidate |
-| Database | `#8b5cf6` violeta | Queries a PostgreSQL/MySQL |
-| Push/WebSocket | `#22c55e` verde | Notificaciones, eventos real-time |
-| Email/external | `#ef4444` rojo | Envíos de email, llamadas API externas |
-| Background job | `#ec4899` rosa | Celery, cron, workers |
-| Docker event | `#64748b` gris | Container start/stop/restart |
 | Nodo running | `#22c55e` verde | Borde + pulso animado |
 | Nodo stopped | `#ef4444` rojo | Borde estático |
+| Nodo paused | `#f59e0b` amarillo | Borde estático |
+| Docker event start | `#22c55e` verde | Flash en nodo |
+| Docker event stop | `#ef4444` rojo | Flash en nodo |
+| Docker event restart | `#f59e0b` amarillo | Flash en nodo |
 
 ---
 
@@ -1199,8 +907,6 @@ El backend siempre envía el campo `project` en cada servicio. El frontend tiene
 | `claude mcp add` | Trivial | 10s |
 | "arranca el dashboard" | Trivial | 5s |
 | Ver arquitectura + stats | Automático | 0s (auto-discovery) |
-| Definir flows custom | Fácil (YAML o via MCP) | 2-5 min |
-| Conectar probes reales | Intermedio (middleware) | 15-30 min |
 
 **Requisitos del usuario:**
 - Docker instalado y corriendo
@@ -1223,31 +929,21 @@ El backend siempre envía el campo `project` en cada servicio. El frontend tiene
 - [ ] Docker events (start/stop/restart) como pulso en nodos
 - [ ] Dark theme, minimap, zoom, pan
 
-### Fase 2 — Flows (partículas)
-- [ ] Flow engine con partículas SVG animadas
-- [ ] flows.yaml parser
-- [ ] Panel de control de flows (toggle, simulate)
-- [ ] Efecto glow/neón en partículas
-- [ ] Trail (estela) detrás de cada partícula
-
-### Fase 3 — MCP
-- [ ] MCP server con tools de Docker + flows
+### Fase 2 — MCP
+- [ ] MCP server con tools de Docker
 - [ ] start_dashboard, list_services, get_stats, get_logs, restart
-- [ ] list_flows, simulate_flow, create_flow
-- [ ] Resources: docker://services, docker://flows
+- [ ] inspect_service, get_networks
+- [ ] Resources: docker://services
 - [ ] README con instrucciones de setup
 
-### Fase 4 — Polish
+### Fase 3 — Polish
 - [ ] Click en nodo → panel lateral con logs en vivo
-- [ ] Modo "demo" / auto-simulate para presentaciones
+- [ ] Notificaciones y alertas
 - [ ] Responsive (funcione en tablet)
 - [ ] Export PNG/SVG del grafo actual
 - [ ] Customizar posiciones de nodos (drag + guardar layout)
 
-### Fase 5 — Avanzado
-- [ ] Probe middleware genérico (npm package para Express/Fastify/Hono)
-- [ ] Probe middleware genérico (pip package para FastAPI/Django)
-- [ ] Eventos reales → partículas automáticas
+### Fase 4 — Avanzado
 - [ ] Health check status en nodos (healthy/unhealthy/starting)
 - [ ] Métricas históricas (SQLite para mini-gráficas en cada nodo)
 - [ ] Alertas cuando un container se cae (webhook/push)

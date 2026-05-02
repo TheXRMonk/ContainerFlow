@@ -18,13 +18,12 @@
   - `nodes/` — componentes de nodos (ServiceNode, GroupNode)
   - `panels/` — paneles (DetailPanel)
   - `hooks/` — hooks (useDocker)
-  - `engine/` — layout y particulas
+  - `engine/` — layout
   - `components/` — componentes generales
 - `src/server/` — backend Hono
   - `index.ts` — servidor principal, WebSocket, API REST
   - `docker.ts` — interaccion con Docker
   - `watcher.ts` — polling de stats y eventos
-  - `flows.ts` — flujos de particulas
 - `src/shared/` — tipos compartidos
 
 ## Comandos

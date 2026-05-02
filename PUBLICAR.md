@@ -55,7 +55,7 @@ Estado actual del proyecto: **v0.1.0** | ~1,774 lineas de codigo | 0 tests | 0 C
   - [ ] **Quick start** en 4 lineas o menos
   - [ ] **Features** con iconos o emojis descriptivos
   - [ ] **Configuration** (tabla de env vars)
-  - [ ] **Flow simulation** con ejemplo YAML
+  - [ ] **Container actions** (start, stop, restart, rebuild, remove)
   - [ ] **MCP integration** (esto es diferenciador, destacarlo)
   - [ ] **Tech stack** (tabla limpia)
   - [ ] **Contributing** link
@@ -66,8 +66,8 @@ Estado actual del proyecto: **v0.1.0** | ~1,774 lineas de codigo | 0 tests | 0 C
 - [ ] Levantar el dashboard con containers de ejemplo
 - [ ] Grabar un GIF de ~10 segundos mostrando:
   - Vista general con servicios conectados
-  - Particulas animadas fluyendo
-  - Metricas en tiempo real
+  - Metricas en tiempo real (CPU/MEM)
+  - Acciones sobre containers
 - [ ] Herramientas recomendadas: `peek` (Linux), `gifski`, o `Kap` (macOS)
 - [ ] Guardar en `docs/assets/demo.gif` y referenciar desde README
 - [ ] Alternativa: screenshot estatico como fallback
@@ -97,7 +97,7 @@ Estado actual del proyecto: **v0.1.0** | ~1,774 lineas de codigo | 0 tests | 0 C
   - v0.0.2 — WebSocket, metricas en tiempo real
   - v0.0.3 — Nodos visuales, layout React Flow
   - v0.0.4 — Filtro de proyectos, autenticacion
-  - v0.0.5 — Flujos animados, MCP server, logs, polish
+  - v0.0.5 — MCP server, logs, acciones de containers, polish
 - [ ] De aqui en adelante, actualizar con cada release
 
 ---
@@ -131,12 +131,11 @@ Estado actual del proyecto: **v0.1.0** | ~1,774 lineas de codigo | 0 tests | 0 C
 - [ ] Usar `bun:test` (ya viene con Bun, zero config)
 - [ ] Tests prioritarios:
   - [ ] `src/server/__tests__/docker.test.ts` — parseo de conexiones, deteccion de tipos
-  - [ ] `src/server/__tests__/flows.test.ts` — parseo de flows.yaml, validacion
+  - [ ] `src/server/__tests__/watcher.test.ts` — polling de stats, eventos Docker
   - [ ] `src/shared/__tests__/types.test.ts` — validacion de tipos con Zod si aplica
   - [ ] `src/client/engine/__tests__/layout.test.ts` — calculo de layout basico
-  - [ ] `src/client/engine/__tests__/particles.test.ts` — motor de particulas
 - [ ] Agregar script: `"test": "bun test"`
-- [ ] Meta inicial: cubrir la logica de negocio del server (docker.ts, flows.ts)
+- [ ] Meta inicial: cubrir la logica de negocio del server (docker.ts, watcher.ts)
 - [ ] No hace falta 100% coverage, pero si que lo critico este cubierto
 
 ### 3.3 Type checking estricto
@@ -297,10 +296,10 @@ Estado actual del proyecto: **v0.1.0** | ~1,774 lineas de codigo | 0 tests | 0 C
 ### 7.2 Publicar en comunidades
 
 - [ ] **Reddit**: r/selfhosted, r/docker, r/devops, r/opensource
-  - Titulo sugerido: "I built a real-time Docker architecture visualizer with animated data flows"
+  - Titulo sugerido: "I built a real-time Docker architecture visualizer with live metrics"
   - Incluir GIF y link al repo
 - [ ] **Hacker News**: Show HN post
-  - Titulo: "Show HN: DockerFlow – Real-time Docker architecture visualization"
+  - Titulo: "Show HN: Flowteon – Real-time Docker architecture visualization"
 - [ ] **Twitter/X**: Thread con GIF y features
 - [ ] **Dev.to**: Articulo sobre como se construyo
 - [ ] **Discord**: Servidores de Docker, Bun, React

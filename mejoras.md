@@ -42,7 +42,7 @@
 
 | Ejemplo | URL | Aplicacion en Flowteon |
 |---------|-----|------------------------|
-| Animating Edges | https://reactflow.dev/examples/edges/animating-edges | Mejorar animaciones de particulas en edges |
+| Animating Edges | https://reactflow.dev/examples/edges/animating-edges | Animaciones en edges para indicar actividad |
 | Custom Edges | https://reactflow.dev/examples/edges/custom-edges | Ya usamos OffsetEdge custom |
 | Edge Label Renderer | https://reactflow.dev/examples/edges/edge-label-renderer | Mostrar tipo de conexion (db, cache, proxy) como label en el edge |
 | Floating Edges | https://reactflow.dev/examples/edges/floating-edges | Handles que se mueven con el edge en vez de posicion fija |
