@@ -8,6 +8,27 @@ import { docker, discoverServices, discoverConnections, getContainerLogs, stream
 import { pollStats, watchDockerEvents } from "./watcher";
 import type { Service, WSMessage } from "../shared/types";
 
+/** Build env-file args for docker compose by detecting .env files next to the compose file */
+function findEnvFileArgs(composeFile: string): string[] {
+  const dir = path.dirname(composeFile);
+  const baseName = path.basename(composeFile, path.extname(composeFile)); // e.g. "docker-compose.prod"
+  const candidates: string[] = [];
+
+  // Prefer specific env file matching compose name (e.g. .env.prod for docker-compose.prod.yml)
+  const suffix = baseName.replace(/^docker-compose\.?/, ""); // "prod" or ""
+  if (suffix) {
+    candidates.push(path.join(dir, `.env.${suffix}`));
+  }
+  candidates.push(path.join(dir, ".env"));
+
+  for (const envFile of candidates) {
+    if (fs.existsSync(envFile)) {
+      return ["--env-file", envFile];
+    }
+  }
+  return [];
+}
+
 const app = new Hono();
 
 // ── Compression ──
@@ -126,7 +147,8 @@ app.post("/api/containers/:id/rebuild", async (c) => {
     if (!composeFile || !serviceName) {
       return c.json({ error: "Not a Compose service — rebuild requires docker-compose" }, 400);
     }
-    const proc = Bun.spawn(["docker", "compose", "-f", composeFile, "up", "--build", "-d", serviceName], {
+    const envArgs = findEnvFileArgs(composeFile);
+    const proc = Bun.spawn(["docker", "compose", "-f", composeFile, ...envArgs, "up", "--build", "-d", serviceName], {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -155,7 +177,8 @@ app.post("/api/containers/:id/remove", async (c) => {
       await container.remove({ force: true });
       return c.json({ ok: true });
     }
-    const proc = Bun.spawn(["docker", "compose", "-f", composeFile, "rm", "-sf", serviceName], {
+    const envArgs = findEnvFileArgs(composeFile);
+    const proc = Bun.spawn(["docker", "compose", "-f", composeFile, ...envArgs, "rm", "-sf", serviceName], {
       stdout: "pipe",
       stderr: "pipe",
     });
