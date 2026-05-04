@@ -167,19 +167,26 @@ app.post("/api/containers/:id/rebuild", async (c) => {
     const info = await container.inspect();
     const composeFile = info.Config?.Labels?.["com.docker.compose.project.config_files"];
     const serviceName = info.Config?.Labels?.["com.docker.compose.service"];
+    const project = info.Config?.Labels?.["com.docker.compose.project"] || "standalone";
     if (!composeFile || !serviceName) {
       return c.json({ error: "Not a Compose service — rebuild requires docker-compose" }, 400);
     }
+    const uid = `${project}/${serviceName}`;
     const envArgs = findEnvFileArgs(composeFile);
+    // Run rebuild in background — respond immediately
     const proc = Bun.spawn(["docker", "compose", "-f", composeFile, ...envArgs, "up", "--build", "-d", serviceName], {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      const stderr = await new Response(proc.stderr).text();
-      return c.json({ error: stderr || `Rebuild failed with exit code ${exitCode}` }, 500);
-    }
+    proc.exited.then(async (exitCode) => {
+      if (exitCode !== 0) {
+        const stderr = await new Response(proc.stderr).text();
+        broadcast({ type: "action_error", data: { uid, action: "rebuild", error: stderr || `Rebuild failed with exit code ${exitCode}` } });
+      }
+      scheduleRefresh();
+    }).catch((err) => {
+      broadcast({ type: "action_error", data: { uid, action: "rebuild", error: err?.message || "Rebuild failed" } });
+    });
     return c.json({ ok: true });
   } catch (err: any) {
     return c.json({ error: err?.message || "Failed to rebuild container" }, 500);
@@ -446,18 +453,14 @@ async function refreshStats(services: Service[]) {
 // Debounced refresh for Docker events
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
-let lateRetryTimer: ReturnType<typeof setTimeout> | undefined;
 function scheduleRefresh() {
   // Invalidate hash so next refresh always broadcasts (restart: same final state but clients need the update)
   lastServicesHash = "";
   clearTimeout(refreshTimer);
   clearTimeout(retryTimer);
-  clearTimeout(lateRetryTimer);
   refreshTimer = setTimeout(() => {
     refreshServices();
     retryTimer = setTimeout(refreshServices, 1500);
-    // Late retry for restart/rebuild: client ignores first 5s, so re-broadcast after that
-    lateRetryTimer = setTimeout(() => { lastServicesHash = ""; refreshServices(); }, 6000);
   }, 500);
 }
 

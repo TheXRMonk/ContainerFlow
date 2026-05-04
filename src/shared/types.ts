@@ -57,4 +57,5 @@ export type WSMessage =
   | { type: "docker_event"; data: DockerEvent }
   | { type: "subscribe_logs"; container: string }
   | { type: "unsubscribe_logs" }
-  | { type: "log_line"; data: LogLine };
+  | { type: "log_line"; data: LogLine }
+  | { type: "action_error"; data: { uid: string; action: string; error: string } };

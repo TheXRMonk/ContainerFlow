@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo, startTransition } from "react";
 import { X, Pause, Play, Square, RotateCw, Hammer, Trash2, Terminal, Network, Globe, Info as InfoIcon, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check, Loader2, AlertTriangle, Maximize2, ExternalLink, Pencil, HelpCircle } from "lucide-react";
-import type { Service, Stats, LogLine, WSMessage, Connection } from "../../shared/types";
+import type { Service, Stats, LogLine, WSMessage, Connection, DockerEvent } from "../../shared/types";
 
 type Tab = "info" | "config" | "env" | "stats";
 
@@ -36,6 +36,7 @@ interface DetailPanelProps {
   closing?: boolean;
   onClose: () => void;
   onAction: (serviceUid: string, expectedState: Service["state"], minDuration?: number) => void;
+  clearProcessing: (uid: string) => void;
   sendMessage: (msg: WSMessage) => void;
   clearLogLines: () => void;
   connections: Connection[];
@@ -44,9 +45,10 @@ interface DetailPanelProps {
   initialLogsFullscreen?: boolean;
   envFiles: Record<string, string>;
   onEnvFileChange: (composeFile: string, envFile: string | null) => void;
+  events: DockerEvent[];
 }
 
-export function DetailPanel({ service, stats, logLines, token, closing, onClose, onAction, sendMessage, clearLogLines, connections, services, getLogsSince, initialLogsFullscreen, envFiles, onEnvFileChange }: DetailPanelProps) {
+export function DetailPanel({ service, stats, logLines, token, closing, onClose, onAction, clearProcessing, sendMessage, clearLogLines, connections, services, getLogsSince, initialLogsFullscreen, envFiles, onEnvFileChange, events }: DetailPanelProps) {
   const [initialLogs, setInitialLogs] = useState<LogLine[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -101,6 +103,17 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
     setActionResult(null);
     setConfirmAction(null);
     actionTimestampRef.current = Math.floor(Date.now() / 1000);
+
+    // Optimistic processing — set BEFORE fetch
+    const expectedState: Service["state"] =
+      action === "stop" || action === "remove" ? "exited" :
+      action === "start" || action === "restart" || action === "rebuild" ? "running" :
+      service.state;
+    const minDuration = action === "restart" ? 2000 : action === "rebuild" ? 3000 : 0;
+    onAction(service.uid, expectedState, minDuration);
+    setInitialLogs([]);
+    clearLogLines();
+
     try {
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -108,29 +121,21 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
       const data = await res.json();
       if (res.ok) {
         setActionResult({ type: "success", message: `${action} successful` });
-        setInitialLogs([]);
-        clearLogLines();
-        // Set processing — pass expected state so we wait for server to confirm
-        const expectedState: Service["state"] =
-          action === "stop" || action === "remove" ? "exited" :
-          action === "start" || action === "restart" || action === "rebuild" ? "running" :
-          service.state;
-        // restart/rebuild go through stop→start cycle, need minDuration to avoid clearing on intermediate states
-        const minDuration = action === "restart" || action === "rebuild" ? 5000 : 0;
-        onAction(service.uid, expectedState, minDuration);
         if (action === "remove") {
           setTimeout(() => handleClose(), 1000);
         }
       } else {
+        clearProcessing(service.uid);
         setActionResult({ type: "error", message: data.error || `Failed to ${action}` });
       }
     } catch {
+      clearProcessing(service.uid);
       setActionResult({ type: "error", message: `Failed to ${action}` });
     } finally {
       setActionLoading(null);
       setTimeout(() => setActionResult(null), 3000);
     }
-  }, [service.id, service.uid, token, onAction]);
+  }, [service.id, service.uid, token, onAction, clearProcessing]);
 
   const runExec = useCallback(async () => {
     if (!execCmd.trim()) return;
@@ -254,10 +259,23 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
     setAutoScroll((prev) => prev === atBottom ? prev : atBottom);
   }, []);
 
-  const allLines = useMemo(
-    () => [...initialLogs, ...logLines],
-    [initialLogs, logLines]
-  );
+  // Docker events as special log lines
+  const eventLogLines = useMemo(() => {
+    return events
+      .filter((e) => e.service === service.uid)
+      .map((e): LogLine => ({
+        container: service.id,
+        line: `[DOCKER] Container ${e.action}`,
+        timestamp: new Date(e.time * 1000).toISOString(),
+        stream: "stderr",
+      }));
+  }, [events, service.uid, service.id]);
+
+  const allLines = useMemo(() => {
+    const combined = [...initialLogs, ...logLines, ...eventLogLines];
+    combined.sort((a, b) => (a.timestamp || "").localeCompare(b.timestamp || ""));
+    return combined;
+  }, [initialLogs, logLines, eventLogLines]);
 
   const connectedSvcs = useMemo(() => {
     const connectedUids = new Set<string>();
@@ -1039,6 +1057,7 @@ const ERROR_PATTERN = /\b(error|fatal|critical|exception|traceback|panic|failed|
 const WARN_PATTERN = /\b(warn|warning)\b/i;
 
 function logLineColor(l: LogLine): string {
+  if (l.line.startsWith("[DOCKER]")) return "text-cyan-400 font-semibold";
   if (ERROR_PATTERN.test(l.line)) return "text-red-400";
   if (WARN_PATTERN.test(l.line)) return "text-yellow-400";
   return "text-slate-400";

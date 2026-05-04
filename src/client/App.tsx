@@ -75,7 +75,7 @@ function Dashboard({ token }: { token: string }) {
   const onPositions = useCallback((pos: Record<string, { x: number; y: number }>) => {
     savedPositions.current = pos;
   }, []);
-  const { services, connections, stats, events, connected, logLines, sendMessage, clearLogLines, setProcessing, getLogsSince } = useDocker(token, statsStore, onPositions);
+  const { services, connections, stats, events, connected, logLines, sendMessage, clearLogLines, setProcessing, clearProcessing, getLogsSince } = useDocker(token, statsStore, onPositions);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const initialLayoutDone = useRef(false);
@@ -647,20 +647,20 @@ function Dashboard({ token }: { token: string }) {
             onClose={() => setContextMenu(null)}
             onAction={(action) => {
               const svc = contextMenu.service;
+              // Optimistic processing — set BEFORE fetch
+              const expectedState: Service["state"] =
+                action === "stop" || action === "remove" ? "exited" :
+                action === "start" || action === "restart" || action === "rebuild" ? "running" :
+                svc.state;
+              const minDuration = action === "restart" ? 2000 : action === "rebuild" ? 3000 : 0;
+              setProcessing(svc.uid, expectedState, minDuration);
               const headers: Record<string, string> = {};
               if (token) headers["Authorization"] = `Bearer ${token}`;
               fetch(`/api/containers/${svc.id}/${action}`, { method: "POST", headers })
                 .then((r) => {
-                  if (r.ok) {
-                    const expectedState: Service["state"] =
-                      action === "stop" || action === "remove" ? "exited" :
-                      action === "start" || action === "restart" || action === "rebuild" ? "running" :
-                      svc.state;
-                    const minDuration = action === "restart" || action === "rebuild" ? 5000 : 0;
-                    setProcessing(svc.uid, expectedState, minDuration);
-                  }
+                  if (!r.ok) clearProcessing(svc.uid);
                 })
-                .catch(() => {});
+                .catch(() => clearProcessing(svc.uid));
             }}
             onOpenLogs={() => {
               const svc = contextMenu.service;
@@ -703,6 +703,7 @@ function Dashboard({ token }: { token: string }) {
             closing={panelClosing}
             onClose={closeDetail}
             onAction={setProcessing}
+            clearProcessing={clearProcessing}
             sendMessage={sendMessage}
             clearLogLines={clearLogLines}
             connections={filteredConnections}
@@ -711,6 +712,7 @@ function Dashboard({ token }: { token: string }) {
             initialLogsFullscreen={openLogsFullscreen}
             envFiles={envFiles}
             onEnvFileChange={handleEnvFileChange}
+            events={events}
           />
         )}
       </div>

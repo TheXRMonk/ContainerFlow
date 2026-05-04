@@ -245,62 +245,80 @@ export function streamContainerLogs(
   const container = docker.getContainer(id);
   let stream: NodeJS.ReadableStream | null = null;
   let destroyed = false;
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
   const destroyStream = (s: unknown) => {
     if (s && typeof (s as any).destroy === "function") (s as any).destroy();
   };
 
-  container.logs({
-    stdout: true,
-    stderr: true,
-    follow: true,
-    since: Math.floor(Date.now() / 1000),
-    timestamps: true,
-  }).then((s) => {
-    stream = s as unknown as NodeJS.ReadableStream;
+  function connect() {
+    if (destroyed) return;
 
-    if (destroyed) {
-      destroyStream(stream);
-      stream = null;
-      return;
-    }
+    container.logs({
+      stdout: true,
+      stderr: true,
+      follow: true,
+      since: Math.floor(Date.now() / 1000),
+      timestamps: true,
+    }).then((s) => {
+      stream = s as unknown as NodeJS.ReadableStream;
 
-    // Docker multiplexed stream parsing for follow mode
-    let buffer = Buffer.alloc(0);
-
-    stream.on("data", (chunk: Buffer) => {
-      if (destroyed) return;
-      buffer = Buffer.concat([buffer, chunk]);
-
-      while (buffer.length >= 8) {
-        const streamType = buffer[0];
-        const size = buffer.readUInt32BE(4);
-        if (buffer.length < 8 + size) break;
-
-        const payload = buffer.slice(8, 8 + size).toString("utf-8").trimEnd();
-        buffer = buffer.slice(8 + size);
-
-        if (!payload) continue;
-
-        const spaceIdx = payload.indexOf(" ");
-        const timestamp = spaceIdx > 0 ? payload.slice(0, spaceIdx) : "";
-        const line = spaceIdx > 0 ? payload.slice(spaceIdx + 1) : payload;
-
-        onLine({
-          container: id,
-          line,
-          timestamp,
-          stream: streamType === 2 ? "stderr" : "stdout",
-        });
+      if (destroyed) {
+        destroyStream(stream);
+        stream = null;
+        return;
       }
+
+      // Docker multiplexed stream parsing for follow mode
+      let buffer = Buffer.alloc(0);
+
+      stream.on("data", (chunk: Buffer) => {
+        if (destroyed) return;
+        buffer = Buffer.concat([buffer, chunk]);
+
+        while (buffer.length >= 8) {
+          const streamType = buffer[0];
+          const size = buffer.readUInt32BE(4);
+          if (buffer.length < 8 + size) break;
+
+          const payload = buffer.slice(8, 8 + size).toString("utf-8").trimEnd();
+          buffer = buffer.slice(8 + size);
+
+          if (!payload) continue;
+
+          const spaceIdx = payload.indexOf(" ");
+          const timestamp = spaceIdx > 0 ? payload.slice(0, spaceIdx) : "";
+          const line = spaceIdx > 0 ? payload.slice(spaceIdx + 1) : payload;
+
+          onLine({
+            container: id,
+            line,
+            timestamp,
+            stream: streamType === 2 ? "stderr" : "stdout",
+          });
+        }
+      });
+
+      // Auto-reconnect when stream closes (container stop/restart)
+      stream.on("end", () => {
+        stream = null;
+        if (!destroyed) reconnectTimer = setTimeout(connect, 2000);
+      });
+      stream.on("error", () => {
+        stream = null;
+        if (!destroyed) reconnectTimer = setTimeout(connect, 2000);
+      });
+    }).catch(() => {
+      if (!destroyed) reconnectTimer = setTimeout(connect, 2000);
     });
-  }).catch((err) => {
-    console.error(`Failed to stream logs for ${id}:`, err);
-  });
+  }
+
+  connect();
 
   return {
     destroy() {
       destroyed = true;
+      clearTimeout(reconnectTimer);
       if (stream) {
         destroyStream(stream);
         stream = null;
