@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo, startTransition } from "react";
-import { X, Pause, Play, Square, RotateCw, Hammer, Trash2, Terminal, Network, Globe, Info, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check, Loader2, AlertTriangle, Maximize2, ExternalLink } from "lucide-react";
+import { X, Pause, Play, Square, RotateCw, Hammer, Trash2, Terminal, Network, Globe, Info as InfoIcon, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check, Loader2, AlertTriangle, Maximize2, ExternalLink, Pencil, HelpCircle } from "lucide-react";
 import type { Service, Stats, LogLine, WSMessage, Connection } from "../../shared/types";
 
 type Tab = "info" | "config" | "env" | "stats";
@@ -21,8 +21,8 @@ const SYSTEM_ENV_KEYS = new Set([
   "MONGO_VERSION", "MONGO_MAJOR", "MONGO_PACKAGE", "MONGO_REPO",
 ]);
 
-const TABS: { id: Tab; label: string; icon: typeof Info }[] = [
-  { id: "info", label: "Info", icon: Info },
+const TABS: { id: Tab; label: string; icon: typeof InfoIcon }[] = [
+  { id: "info", label: "Info", icon: InfoIcon },
   { id: "stats", label: "Stats", icon: Activity },
   { id: "env", label: "Env", icon: Variable },
   { id: "config", label: "Config", icon: Settings },
@@ -42,9 +42,11 @@ interface DetailPanelProps {
   services: Service[];
   getLogsSince: (uid: string) => number | undefined;
   initialLogsFullscreen?: boolean;
+  envFiles: Record<string, string>;
+  onEnvFileChange: (composeFile: string, envFile: string | null) => void;
 }
 
-export function DetailPanel({ service, stats, logLines, token, closing, onClose, onAction, sendMessage, clearLogLines, connections, services, getLogsSince, initialLogsFullscreen }: DetailPanelProps) {
+export function DetailPanel({ service, stats, logLines, token, closing, onClose, onAction, sendMessage, clearLogLines, connections, services, getLogsSince, initialLogsFullscreen, envFiles, onEnvFileChange }: DetailPanelProps) {
   const [initialLogs, setInitialLogs] = useState<LogLine[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -58,6 +60,9 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
   const [copiedEnvIdx, setCopiedEnvIdx] = useState<number | null>(null);
   const [logsModal, setLogsModal] = useState(!!initialLogsFullscreen);
   const modalScrollRef = useRef<HTMLDivElement>(null);
+  const [envFileEditing, setEnvFileEditing] = useState(false);
+  const [envFileOptions, setEnvFileOptions] = useState<string[]>([]);
+  const [envFileSelected, setEnvFileSelected] = useState<string>("");
 
   // Scroll modal to bottom when opened or when logs arrive
   useEffect(() => {
@@ -433,6 +438,73 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
               <DetailRow label="Project" value={service.project} />
               {service.compose_file && (
                 <DetailRow label="Compose" value={service.compose_file} mono />
+              )}
+
+              {service.compose_file && (
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider text-slate-500 mb-0.5 flex items-center gap-1">
+                    Env File
+                    <span className="relative group/tip">
+                      <HelpCircle size={11} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
+                      <span className="absolute left-full top-1/2 -translate-y-1/2 ml-1.5 px-2.5 py-1.5 bg-slate-700 text-slate-200 text-[11px] normal-case tracking-normal rounded-md shadow-lg whitespace-nowrap opacity-0 pointer-events-none group-hover/tip:opacity-100 transition-opacity z-10">
+                        Only files starting with .env are detected
+                      </span>
+                    </span>
+                  </span>
+                  {envFileEditing ? (
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={envFileSelected}
+                        onChange={(e) => setEnvFileSelected(e.target.value)}
+                        className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm font-mono text-slate-200 focus:outline-none focus:border-cyan-500"
+                      >
+                        <option value="">Auto (detect)</option>
+                        {envFileOptions.map((f) => (
+                          <option key={f} value={f}>{f}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => {
+                          onEnvFileChange(service.compose_file!, envFileSelected || null);
+                          setEnvFileEditing(false);
+                        }}
+                        className="p-1 rounded text-emerald-400 hover:bg-emerald-400/10 transition-colors"
+                        title="Save"
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        onClick={() => setEnvFileEditing(false)}
+                        className="p-1 rounded text-slate-400 hover:bg-slate-700 transition-colors"
+                        title="Cancel"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-sm break-all ${envFiles[service.compose_file!] ? "font-mono text-slate-200" : "text-slate-500 italic"}`}>
+                        {envFiles[service.compose_file!] || "Auto"}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setEnvFileSelected(envFiles[service.compose_file!] || "");
+                          const headers: Record<string, string> = {};
+                          if (token) headers["Authorization"] = `Bearer ${token}`;
+                          fetch(`/api/env-files/detect/${service.id}`, { headers })
+                            .then((r) => r.ok ? r.json() : { files: [] })
+                            .then((data: { files: string[] }) => setEnvFileOptions(data.files))
+                            .catch(() => setEnvFileOptions([]));
+                          setEnvFileEditing(true);
+                        }}
+                        className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-slate-700 transition-colors"
+                        title="Edit env file"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
 
               {service.ports.length > 0 && (

@@ -8,8 +8,31 @@ import { docker, discoverServices, discoverConnections, getContainerLogs, stream
 import { pollStats, watchDockerEvents } from "./watcher";
 import type { Service, WSMessage } from "../shared/types";
 
+/** Env-file overrides per compose file (persisted to file) */
+const ENV_FILES_FILE = path.join(process.cwd(), ".dockerflow-env-files.json");
+
+function loadEnvFiles(): Record<string, string> {
+  try {
+    if (fs.existsSync(ENV_FILES_FILE)) {
+      return JSON.parse(fs.readFileSync(ENV_FILES_FILE, "utf-8"));
+    }
+  } catch {}
+  return {};
+}
+
 /** Build env-file args for docker compose by detecting .env files next to the compose file */
 function findEnvFileArgs(composeFile: string): string[] {
+  // Check for user override first
+  const overrides = loadEnvFiles();
+  const override = overrides[composeFile];
+  if (override) {
+    const resolved = path.isAbsolute(override) ? override : path.join(path.dirname(composeFile), override);
+    if (fs.existsSync(resolved)) {
+      return ["--env-file", resolved];
+    }
+  }
+
+  // Auto-detect heuristic
   const dir = path.dirname(composeFile);
   const baseName = path.basename(composeFile, path.extname(composeFile)); // e.g. "docker-compose.prod"
   const candidates: string[] = [];
@@ -230,6 +253,40 @@ app.put("/api/positions", async (c) => {
     return c.json({ ok: true });
   } catch {
     return c.json({ error: "Failed to save" }, 500);
+  }
+});
+
+// ── Env-file overrides (persisted to file) ──
+app.get("/api/env-files", (c) => {
+  return c.json(loadEnvFiles());
+});
+
+app.put("/api/env-files", async (c) => {
+  try {
+    const body = await c.req.json();
+    fs.writeFileSync(ENV_FILES_FILE, JSON.stringify(body, null, 2));
+    return c.json({ ok: true });
+  } catch {
+    return c.json({ error: "Failed to save" }, 500);
+  }
+});
+
+app.get("/api/env-files/detect/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
+  try {
+    const container = docker.getContainer(id);
+    const info = await container.inspect();
+    const composeFile = info.Config?.Labels?.["com.docker.compose.project.config_files"];
+    if (!composeFile) return c.json({ files: [], composeFile: null });
+    const dir = path.dirname(composeFile);
+    const entries = fs.readdirSync(dir);
+    const envFiles = entries.filter((e: string) => e.startsWith(".env") && !e.endsWith(".example") && !e.endsWith(".sample"))
+      .map((e: string) => e)
+      .sort();
+    return c.json({ files: envFiles, composeFile });
+  } catch (err: any) {
+    return c.json({ error: err?.message || "Failed to detect env files" }, 500);
   }
 });
 

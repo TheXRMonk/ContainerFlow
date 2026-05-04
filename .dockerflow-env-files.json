@@ -1,0 +1,5 @@
+{
+  "/home/jorge/git/fidelizacion/docker-compose.prod.yml": ".env.prod",
+  "/home/jorge/git/fidelizacion/api/docker-compose.dev.yml": ".env",
+  "/home/jorge/git/ninjasagacw/docker-compose.infra.yml": ".env"
+}

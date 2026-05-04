@@ -90,6 +90,7 @@ function Dashboard({ token }: { token: string }) {
   const prevViewport = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const isDragging = useRef(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; service: Service } | null>(null);
+  const [envFiles, setEnvFiles] = useState<Record<string, string>>({});
 
   // Close filter dropdown on outside click
   useEffect(() => {
@@ -101,6 +102,28 @@ function Dashboard({ token }: { token: string }) {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  // Fetch env-file overrides
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    fetch("/api/env-files", { headers })
+      .then((r) => r.ok ? r.json() : {})
+      .then((data: Record<string, string>) => setEnvFiles(data))
+      .catch(() => {});
+  }, [token]);
+
+  const handleEnvFileChange = useCallback((composeFile: string, envFile: string | null) => {
+    setEnvFiles((prev) => {
+      const next = { ...prev };
+      if (envFile) next[composeFile] = envFile;
+      else delete next[composeFile];
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      fetch("/api/env-files", { method: "PUT", headers, body: JSON.stringify(next) }).catch(() => {});
+      return next;
+    });
+  }, [token]);
 
   const NODE_W = NODE_WIDTH;
   const NODE_H = NODE_HEIGHT;
@@ -686,6 +709,8 @@ function Dashboard({ token }: { token: string }) {
             services={filteredServices}
             getLogsSince={getLogsSince}
             initialLogsFullscreen={openLogsFullscreen}
+            envFiles={envFiles}
+            onEnvFileChange={handleEnvFileChange}
           />
         )}
       </div>
