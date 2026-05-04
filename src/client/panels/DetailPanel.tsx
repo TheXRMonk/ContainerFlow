@@ -64,6 +64,13 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
   const [envFileOptions, setEnvFileOptions] = useState<string[]>([]);
   const [envFileSelected, setEnvFileSelected] = useState<string>("");
 
+  // Exec state
+  const [execOpen, setExecOpen] = useState(false);
+  const [execCmd, setExecCmd] = useState("");
+  const [execLoading, setExecLoading] = useState(false);
+  const [execResult, setExecResult] = useState<{ output: string; exitCode: number } | null>(null);
+  const [execError, setExecError] = useState<string | null>(null);
+
   // Scroll modal to bottom when opened or when logs arrive
   useEffect(() => {
     if (logsModal && modalScrollRef.current) {
@@ -124,6 +131,32 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
       setTimeout(() => setActionResult(null), 3000);
     }
   }, [service.id, service.uid, token, onAction]);
+
+  const runExec = useCallback(async () => {
+    if (!execCmd.trim()) return;
+    setExecLoading(true);
+    setExecResult(null);
+    setExecError(null);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/containers/${service.id}/exec`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ cmd: execCmd }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setExecResult({ output: data.output, exitCode: data.exitCode });
+      } else {
+        setExecError(data.error || "Exec failed");
+      }
+    } catch {
+      setExecError("Network error");
+    } finally {
+      setExecLoading(false);
+    }
+  }, [execCmd, service.id, token]);
 
   // Re-subscribe logs when exiting processing state
   useEffect(() => {
@@ -823,6 +856,16 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
               )}
             </div>
             <div className="flex items-center gap-1">
+              {service.state === "running" && (
+                <button
+                  onClick={() => { setExecOpen((v) => { if (!v) setLogsExpanded(true); return !v; }); setExecResult(null); setExecError(null); }}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${execOpen ? "text-purple-300 bg-purple-400/10" : "text-purple-400 hover:bg-purple-400/10"}`}
+                  title="Exec command"
+                >
+                  <Terminal size={12} />
+                  Exec
+                </button>
+              )}
               <button
                 onClick={() => {
                   setAutoScroll((v) => {
@@ -845,6 +888,54 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
               </button>
             </div>
           </div>
+          {/* Exec panel — below logs header */}
+          {execOpen && (
+            <div className="px-4 py-2.5 bg-slate-800/90 border-b border-slate-700/60 shrink-0 space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={execCmd}
+                  onChange={(e) => setExecCmd(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && execCmd.trim() && !execLoading) {
+                      e.preventDefault();
+                      runExec();
+                    }
+                  }}
+                  placeholder="e.g. python manage.py migrate"
+                  className="flex-1 bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-purple-500"
+                  autoFocus
+                />
+                <button
+                  onClick={runExec}
+                  disabled={!execCmd.trim() || execLoading}
+                  className="px-3 py-1.5 rounded text-[11px] font-medium text-white bg-purple-700 hover:bg-purple-600 transition-colors disabled:opacity-40"
+                >
+                  {execLoading ? <Loader2 size={12} className="animate-spin" /> : "Run"}
+                </button>
+                <button
+                  onClick={() => { setExecOpen(false); setExecResult(null); setExecError(null); }}
+                  className="p-1 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors"
+                  title="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              {execError && (
+                <div className="text-xs text-red-400 bg-red-900/20 border border-red-800/40 rounded px-2.5 py-1.5">{execError}</div>
+              )}
+              {execResult && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className={execResult.exitCode === 0 ? "text-emerald-400" : "text-red-400"}>
+                      Exit code: {execResult.exitCode}
+                    </span>
+                  </div>
+                  <pre className="bg-slate-900 rounded px-2.5 py-2 text-xs font-mono text-slate-300 max-h-48 overflow-auto whitespace-pre-wrap break-all">{execResult.output || "(no output)"}</pre>
+                </div>
+              )}
+            </div>
+          )}
           <div
             ref={scrollRef}
             onScroll={handleScroll}

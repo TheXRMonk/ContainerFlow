@@ -216,6 +216,62 @@ app.post("/api/containers/:id/remove", async (c) => {
   }
 });
 
+app.post("/api/containers/:id/exec", async (c) => {
+  const id = c.req.param("id");
+  if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
+  try {
+    const body = await c.req.json();
+    const cmd = body?.cmd;
+    if (!cmd || typeof cmd !== "string") return c.json({ error: "Missing cmd" }, 400);
+
+    // Parse command respecting quotes
+    const parts: string[] = [];
+    let current = "";
+    let inQuote: string | null = null;
+    for (const ch of cmd) {
+      if (inQuote) {
+        if (ch === inQuote) { inQuote = null; }
+        else { current += ch; }
+      } else if (ch === '"' || ch === "'") {
+        inQuote = ch;
+      } else if (ch === " ") {
+        if (current) { parts.push(current); current = ""; }
+      } else {
+        current += ch;
+      }
+    }
+    if (current) parts.push(current);
+    if (parts.length === 0) return c.json({ error: "Empty command" }, 400);
+
+    const container = docker.getContainer(id);
+    const exec = await container.exec({ Cmd: parts, AttachStdout: true, AttachStderr: true });
+    const stream = await exec.start({});
+
+    // Collect output using dockerode's demuxStream
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    await new Promise<void>((resolve) => {
+      const passStdout = new (require("stream").PassThrough)();
+      const passStderr = new (require("stream").PassThrough)();
+      passStdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+      passStderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+      docker.modem.demuxStream(stream, passStdout, passStderr);
+      stream.on("end", resolve);
+      stream.on("error", resolve);
+      setTimeout(resolve, 30000);
+    });
+
+    const stdout = Buffer.concat(stdoutChunks).toString("utf-8");
+    const stderr = Buffer.concat(stderrChunks).toString("utf-8");
+    const output = (stdout + stderr).trim();
+
+    const inspect = await exec.inspect();
+    return c.json({ ok: true, output, exitCode: inspect.ExitCode ?? -1 });
+  } catch (err: any) {
+    return c.json({ error: err?.message || "Failed to exec" }, 500);
+  }
+});
+
 app.get("/api/logs/:id", async (c) => {
   const id = c.req.param("id");
   if (!/^[a-f0-9]{12,64}$/.test(id)) {
