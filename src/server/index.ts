@@ -77,6 +77,39 @@ const HOST = AUTH_TOKEN ? "0.0.0.0" : "127.0.0.1";
 const POLL_INTERVAL_MS = 5000;
 const WS_RECONNECT_MS = 3000;
 
+// ── Rate limiting (in-memory, per IP) ──
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const failedAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const entry = failedAttempts.get(ip);
+  if (!entry) return false;
+  if (Date.now() > entry.resetAt) {
+    failedAttempts.delete(ip);
+    return false;
+  }
+  return entry.count >= RATE_LIMIT_MAX;
+}
+
+function recordFailedAttempt(ip: string): void {
+  const now = Date.now();
+  const entry = failedAttempts.get(ip);
+  if (!entry || now > entry.resetAt) {
+    failedAttempts.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+  } else {
+    entry.count++;
+  }
+}
+
+// Cleanup stale entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of failedAttempts) {
+    if (now > entry.resetAt) failedAttempts.delete(ip);
+  }
+}, 5 * 60_000);
+
 // ── Auth middleware ──
 if (AUTH_TOKEN) {
   app.use("*", async (c, next) => {
@@ -84,8 +117,14 @@ if (AUTH_TOKEN) {
     if (c.req.path === "/" || c.req.path.startsWith("/assets") || c.req.path.endsWith(".png") || c.req.path.endsWith(".webp") || c.req.path.endsWith(".ico")) return next();
     if (c.req.path === "/api/auth") return next();
 
+    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    if (isRateLimited(ip)) return c.json({ error: "Too many failed attempts. Try again later." }, 429);
+
     const token = c.req.header("Authorization")?.replace("Bearer ", "");
-    if (token !== AUTH_TOKEN) return c.json({ error: "Unauthorized" }, 401);
+    if (token !== AUTH_TOKEN) {
+      recordFailedAttempt(ip);
+      return c.json({ error: "Unauthorized" }, 401);
+    }
     return next();
   });
 }
@@ -529,6 +568,12 @@ const server = Bun.serve({
 
         // Handle authentication via first message
         if (msg.type === "auth") {
+          const wsIp = (ws as any).remoteAddress || "unknown";
+          if (AUTH_TOKEN && isRateLimited(wsIp)) {
+            native.send(JSON.stringify({ type: "auth_error", reason: "rate_limited" }));
+            native.close();
+            return;
+          }
           if (msg.token === AUTH_TOKEN) {
             authenticatedClients.add(native);
             native.send(JSON.stringify({ type: "auth_ok" }));
@@ -543,6 +588,7 @@ const server = Bun.serve({
               } catch {}
             }).catch(() => {});
           } else {
+            if (AUTH_TOKEN) recordFailedAttempt(wsIp);
             native.send(JSON.stringify({ type: "auth_error" }));
             native.close();
           }

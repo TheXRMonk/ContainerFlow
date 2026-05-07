@@ -2,6 +2,10 @@
 
 [![CI](https://github.com/RGJorge/containerflow/actions/workflows/ci.yml/badge.svg)](https://github.com/RGJorge/containerflow/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+![Version](https://img.shields.io/badge/version-v0.1.0-green)
+![Docker Required](https://img.shields.io/badge/Docker-required-blue?logo=docker)
+![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun)
+[![Last Commit](https://img.shields.io/github/last-commit/RGJorge/containerflow)](https://github.com/RGJorge/containerflow/commits/main)
 
 Real-time Docker architecture visualizer. Displays services, connections and metrics from all your Docker Compose projects in an interactive dashboard.
 
@@ -113,6 +117,12 @@ GitHub Actions ejecuta automaticamente en cada push/PR a `main`:
 3. Build (produccion)
 
 Ver `.github/workflows/ci.yml`.
+
+## Seguridad
+
+- **HTTPS obligatorio en produccion** — el token de autenticacion viaja en headers HTTP. Sin HTTPS, es texto plano visible en la red. Usa un reverse proxy con TLS (nginx, Caddy, Cloudflare Tunnel) delante de ContainerFlow.
+- **Rate limiting** — incluido por defecto: 5 intentos fallidos por minuto por IP. Despues del limite, retorna `429 Too Many Requests`. Aplica tanto a la API REST como a la autenticacion WebSocket.
+- **Acceso local por defecto** — sin `AUTH_TOKEN`, el servidor solo escucha en `127.0.0.1`. Con `AUTH_TOKEN`, escucha en `0.0.0.0` para acceso remoto.
 
 ## Stack
 
