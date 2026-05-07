@@ -1,6 +1,11 @@
 # ContainerFlow
 
+[![CI](https://github.com/RGJorge/containerflow/actions/workflows/ci.yml/badge.svg)](https://github.com/RGJorge/containerflow/actions/workflows/ci.yml)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
 Real-time Docker architecture visualizer. Displays services, connections and metrics from all your Docker Compose projects in an interactive dashboard.
+
+![ContainerFlow demo](docs/demo.gif)
 
 ## Requisitos
 
