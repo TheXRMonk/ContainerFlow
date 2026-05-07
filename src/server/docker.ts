@@ -4,7 +4,9 @@ import type { Service, Connection, LogLine } from "../shared/types";
 
 const DOCKER_SOCKET = process.env.DOCKER_SOCKET || "/var/run/docker.sock";
 
-if (!fs.existsSync(DOCKER_SOCKET)) {
+const isTest = process.env.NODE_ENV === "test" || !!process.env.VITEST;
+
+if (!isTest && !fs.existsSync(DOCKER_SOCKET)) {
   console.error(`\n  Error: Docker socket not found at ${DOCKER_SOCKET}`);
   console.error(`  Make sure Docker is running or set DOCKER_SOCKET env var.\n`);
   process.exit(1);
@@ -107,7 +109,7 @@ const INFRA_PATTERNS: { pattern: string; type: string; label: string; role: "tar
 
 const PROXY_PATTERNS = ["nginx", "traefik", "haproxy", "caddy", "envoy"];
 
-function isInfraService(svc: Service): { type: string; label: string } | null {
+export function isInfraService(svc: Service): { type: string; label: string } | null {
   const img = svc.image.toLowerCase();
   const name = svc.name.toLowerCase();
   for (const p of INFRA_PATTERNS) {
@@ -118,13 +120,13 @@ function isInfraService(svc: Service): { type: string; label: string } | null {
   return null;
 }
 
-function isProxyService(svc: Service): boolean {
+export function isProxyService(svc: Service): boolean {
   const img = svc.image.toLowerCase();
   const name = svc.name.toLowerCase();
   return PROXY_PATTERNS.some((p) => img.includes(p) || name.includes(p));
 }
 
-function isWorkerService(svc: Service): boolean {
+export function isWorkerService(svc: Service): boolean {
   const name = svc.name.toLowerCase();
   return name.includes("celery") || name.includes("worker") || name.includes("beat") || name.includes("cron");
 }
@@ -201,10 +203,14 @@ export async function getContainerLogs(id: string, tail = 200, since?: number): 
   const opts: Record<string, any> = {
     stdout: true,
     stderr: true,
-    tail,
     timestamps: true,
   };
-  if (since) opts.since = since;
+  if (since) {
+    // When filtering by time, use since only (no tail limit) — Docker applies tail before since
+    opts.since = since;
+  } else {
+    opts.tail = tail;
+  }
   const logBuffer = await container.logs(opts);
 
   const lines: LogLine[] = [];

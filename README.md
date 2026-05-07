@@ -68,91 +68,46 @@ bun run start
 - **Conexiones inteligentes** — detecta relaciones app→database, app→cache, proxy→app, worker→broker
 - **Metricas en tiempo real** — CPU y memoria por container, actualizado cada 3 segundos
 - **Eventos Docker** — flash visual cuando un container inicia, para o reinicia
+- **Panel de detalle** — click en un container para ver info, stats, variables de entorno y configuracion en tabs separados
+- **Logs de containers** — logs en tiempo real con scroll automatico, filtro por stream (stdout/stderr) y opcion de copiar
+- **Acciones sobre containers** — start, stop, restart, rebuild y remove directamente desde el panel
 - **Filtro de proyectos** — dropdown para mostrar/ocultar proyectos, persiste entre sesiones
 - **Autenticacion** — pantalla de login con AUTH_TOKEN para acceso remoto seguro
-- **Simulacion de flujos** — particulas animadas que recorren los edges para visualizar como viajan los requests/datos entre servicios. Configurable via `flows.yaml`
 - **Leyenda de conexiones** — colores por tipo: Database (azul), Cache (rojo), Broker (naranja), Proxy (verde)
 - **Grupos visuales** — recuadros por proyecto/compose con titulo, archivo compose y conteo de containers
-- **Logs de containers** — click en un container para ver sus logs en tiempo real, con scroll automatico y opcion de copiar
-- **Tooltips** — hover sobre cada nodo para ver estado, imagen, ID y puertos
+- **Menu contextual** — click derecho en un nodo para acciones rapidas
+- **Pagina de monitoring** — vista de eventos Docker recientes
+- **Pagina de settings** — configuracion de la aplicacion
 
-## Simulacion de Flujos
+## Tests
 
-Crea un archivo `flows.yaml` en la raiz del proyecto para definir flujos de datos animados:
-
-```yaml
-flows:
-  api_request:
-    name: "API Request"
-    color: "#22d3ee"
-    speed: 1.4
-    path: [nginx, backend, db, backend, nginx]
-
-  background_job:
-    name: "Tarea en Background"
-    color: "#ec4899"
-    speed: 1.8
-    path: [celery-beat, ninja-redis, celery-worker, db]
-
-settings:
-  particle_size: 2
-  trail: true
-  trail_opacity: 0.3
-  glow: true
-  max_particles: 50
-```
-
-- **path** usa los nombres de los servicios (como aparecen en `docker compose ps`)
-- **speed** controla la velocidad (mayor = mas lento)
-- Las particulas recorren los edges entre nodos, incluyendo caminos de ida y vuelta
-- Al llegar a cada nodo, la particula hace una pausa y el nodo se ilumina con el color del flujo
-- Si no existe `flows.yaml`, el panel de flujos no aparece
-- **Modo Demo** — boton "Demo" en el panel que auto-simula flujos en loop cada ~3 segundos, ciclando entre todos los flujos definidos. Ideal para presentaciones
-
-## MCP Server (Claude Code integration)
-
-DockerFlow incluye un servidor MCP (Model Context Protocol) que permite gestionar flujos y monitorear servicios Docker desde Claude Code u otro LLM compatible, sin abrir el browser.
-
-### Instalacion
+El proyecto usa [Vitest](https://vitest.dev/) para tests unitarios.
 
 ```bash
-bun run setup:mcp
+# Correr todos los tests
+bun run test
+
+# Correr en modo watch (re-ejecuta al guardar)
+bun run test:watch
+
+# Verificar tipos TypeScript
+bun run typecheck
 ```
 
-Esto configura el MCP server de forma **global** en `~/.claude/settings.json`. Reinicia Claude Code y las herramientas quedan disponibles en **todos** tus proyectos.
+Los tests cubren:
 
-Para ejecutar el servidor MCP manualmente (debug):
+- **Logica de processing** (`src/client/hooks/processing.test.ts`) — sincronizacion de estados cuando se ejecutan acciones sobre containers (start/stop/restart), incluyendo manejo de estados crashed/dead, timeouts y minDuration
+- **Deteccion de conexiones** (`src/server/docker.test.ts`) — descubrimiento de relaciones entre servicios por red compartida, clasificacion de servicios (infra, proxy, worker) y deduplicacion
 
-```bash
-bun run mcp
-```
+## CI
 
-### Herramientas disponibles
+GitHub Actions ejecuta automaticamente en cada push/PR a `main`:
 
-| Tool | Descripcion |
-|---|---|
-| `list_flows` | Lista flujos configurados y settings |
-| `create_flow` | Crea un flujo nuevo en flows.yaml |
-| `update_flow` | Modifica un flujo existente |
-| `delete_flow` | Elimina un flujo de flows.yaml |
-| `simulate_flow` | Info para disparar simulacion en clientes conectados |
-| `list_services` | Servicios Docker con estado, imagen, puertos |
-| `get_stats` | CPU/memoria por servicio |
-| `get_logs` | Ultimas N lineas de logs de un container |
-| `get_connections` | Conexiones detectadas entre servicios |
-| `start_dashboard` | Arranca el servidor dev (Vite + backend) |
-| `stop_dashboard` | Para el servidor dev |
+1. Typecheck (errores de tipos)
+2. Tests (Vitest)
+3. Build (produccion)
 
-### Uso desde Claude Code
-
-Una vez configurado, las herramientas estan disponibles directamente. Ejemplos:
-
-- "Arranca el dashboard en modo dev"
-- "Lista los servicios Docker corriendo"
-- "Muestra los logs del container abc123"
-- "Crea un flujo llamado api_request que pase por nginx, backend y db"
-- "Cuanto CPU esta usando cada servicio?"
-- "Para el dashboard"
+Ver `.github/workflows/ci.yml`.
 
 ## Stack
 
@@ -166,6 +121,7 @@ Una vez configurado, las herramientas estan disponibles directamente. Ejemplos:
 | Iconos | Lucide React |
 | Docker API | dockerode |
 | Comunicacion | WebSocket nativo |
+| Tests | Vitest |
 
 ## Estructura
 
@@ -175,7 +131,6 @@ src/
     index.ts        — servidor Hono + WebSocket + CLI args
     docker.ts       — descubrimiento de servicios y conexiones
     watcher.ts      — polling de stats + stream de eventos Docker
-    mcp.ts          — servidor MCP (stdio) para Claude Code
   client/
     App.tsx          — dashboard principal + login screen
     main.tsx         — entry point React
@@ -185,17 +140,23 @@ src/
       GroupNode.tsx    — header de grupo (proyecto/compose)
     hooks/
       useDocker.ts   — hook WebSocket para datos en tiempo real
+      processing.ts  — logica pura de estados processing
     engine/
       layout.ts      — layout de grupos + grid + edges
-      particles.ts   — motor de particulas (spawn, tick, pausa en nodos)
     components/
-      ParticleOverlay.tsx — renderizado SVG de particulas sobre edges
+      HeaderBar.tsx      — barra superior con navegacion
+      EdgeLegend.tsx     — leyenda de tipos de conexion
+      LoginScreen.tsx    — pantalla de autenticacion
+      NodeContextMenu.tsx — menu contextual de nodos
+      OffsetEdge.tsx     — edge custom con offset para evitar superposicion
     panels/
-      LogPanel.tsx   — panel de logs por container
-      FlowPanel.tsx  — panel de simulacion de flujos
+      DetailPanel.tsx — panel lateral con info, stats, env, config y logs
+      LogPanel.tsx    — panel de logs por container
+    pages/
+      MonitoringPage.tsx — vista de eventos Docker
+      SettingsPage.tsx   — configuracion de la aplicacion
   shared/
     types.ts         — tipos compartidos server/client
-flows.yaml           — configuracion de flujos (opcional)
 ```
 
 ## Licencia

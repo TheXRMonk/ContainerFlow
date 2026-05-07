@@ -113,6 +113,9 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
     onAction(service.uid, expectedState, minDuration);
     setInitialLogs([]);
     clearLogLines();
+    // Unsubscribe log stream to prevent stale lines during the action
+    sendMessage({ type: "unsubscribe_logs" });
+    subscribedRef.current = null;
 
     try {
       const headers: Record<string, string> = {};
@@ -135,7 +138,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
       setActionLoading(null);
       setTimeout(() => setActionResult(null), 3000);
     }
-  }, [service.id, service.uid, token, onAction, clearProcessing]);
+  }, [service.id, service.uid, token, onAction, clearProcessing, sendMessage, clearLogLines]);
 
   const runExec = useCallback(async () => {
     if (!execCmd.trim()) return;
@@ -174,8 +177,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const since = actionTimestampRef.current;
-      const sinceParam = since ? `&since=${since}` : "";
-      fetch(`/api/logs/${service.id}?tail=200${sinceParam}`, { headers })
+      fetch(`/api/logs/${service.id}?tail=200&since=${since || Math.floor(Date.now() / 1000)}`, { headers })
         .then((r) => r.ok ? r.json() : [])
         .then((lines: LogLine[]) => setInitialLogs(lines))
         .catch(() => {});
@@ -259,10 +261,11 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
     setAutoScroll((prev) => prev === atBottom ? prev : atBottom);
   }, []);
 
-  // Docker events as special log lines
+  // Docker events as special log lines (only show events since last action, or all if no action)
   const eventLogLines = useMemo(() => {
+    const sinceTs = actionTimestampRef.current;
     return events
-      .filter((e) => e.service === service.uid)
+      .filter((e) => e.service === service.uid && (!sinceTs || e.time >= sinceTs))
       .map((e): LogLine => ({
         container: service.id,
         line: `[DOCKER] Container ${e.action}`,

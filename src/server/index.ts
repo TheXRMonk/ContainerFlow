@@ -124,7 +124,7 @@ app.post("/api/containers/:id/stop", async (c) => {
   try {
     const container = docker.getContainer(id);
     await container.stop();
-    // Docker events will trigger refresh automatically when state changes
+    immediateRefresh();
     return c.json({ ok: true });
   } catch (err: any) {
     if (err?.statusCode === 304) return c.json({ ok: true, message: "Already stopped" });
@@ -138,7 +138,7 @@ app.post("/api/containers/:id/start", async (c) => {
   try {
     const container = docker.getContainer(id);
     await container.start();
-    // Docker events will trigger refresh automatically when state changes
+    immediateRefresh();
     return c.json({ ok: true });
   } catch (err: any) {
     if (err?.statusCode === 304) return c.json({ ok: true, message: "Already running" });
@@ -152,7 +152,7 @@ app.post("/api/containers/:id/restart", async (c) => {
   try {
     const container = docker.getContainer(id);
     await container.restart();
-    // Docker events will trigger refresh automatically when state changes
+    immediateRefresh();
     return c.json({ ok: true });
   } catch (err: any) {
     return c.json({ error: err?.message || "Failed to restart container" }, 500);
@@ -464,6 +464,14 @@ function scheduleRefresh() {
   }, 500);
 }
 
+// Immediate refresh after action endpoints (container already changed state)
+function immediateRefresh() {
+  lastServicesHash = "";
+  clearTimeout(refreshTimer);
+  clearTimeout(retryTimer);
+  refreshServices();
+}
+
 watchDockerEvents((event) => {
   broadcast({ type: "docker_event", data: event });
   scheduleRefresh();
@@ -516,7 +524,7 @@ const server = Bun.serve({
     },
     message(ws, message) {
       try {
-        const msg = JSON.parse(typeof message === "string" ? message : new TextDecoder().decode(message as ArrayBuffer));
+        const msg = JSON.parse(typeof message === "string" ? message : new TextDecoder().decode(message as unknown as ArrayBuffer));
         const native = ws as unknown as WebSocket;
 
         // Handle authentication via first message

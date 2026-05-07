@@ -1,15 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { Service, Connection, Stats, DockerEvent, LogLine, WSMessage } from "../../shared/types";
 import type { StatsStore } from "./useStatsStore";
-
-function arraysEqual(a: Service[], b: Service[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i].uid !== b[i].uid) return false;
-    if (a[i].state !== b[i].state) return false;
-  }
-  return true;
-}
+import { arraysEqual, applyProcessing as applyProcessingPure } from "./processing";
 
 export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (pos: Record<string, { x: number; y: number }>) => void) {
   const [services, setServices] = useState<Service[]>([]);
@@ -19,6 +11,7 @@ export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (po
   const [logLines, setLogLines] = useState<LogLine[]>([]);
   // Processing state: uid → { expected state, start time, min duration before clearing }
   const processingRef = useRef<Map<string, { expected: Service["state"]; startedAt: number; minDuration: number }>>(new Map());
+  const processingIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   const lastRawServicesRef = useRef<Service[]>([]);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -26,30 +19,7 @@ export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (po
 
   // Apply processing overlay to raw services data
   const applyProcessing = useCallback((raw: Service[]): Service[] => {
-    const processing = processingRef.current;
-    if (processing.size === 0) return raw;
-    const now = Date.now();
-    return raw.map((s: Service) => {
-      const entry = processing.get(s.uid);
-      if (!entry) return s;
-      const elapsed = now - entry.startedAt;
-      if (elapsed < entry.minDuration) {
-        return { ...s, state: "processing" as any, _processingStartedAt: entry.startedAt } as any;
-      }
-      if (s.state === entry.expected) {
-        processing.delete(s.uid);
-        return s;
-      }
-      if (s.state === "crashed" && entry.expected === "running") {
-        processing.delete(s.uid);
-        return s;
-      }
-      if (now - entry.startedAt > 15000) {
-        processing.delete(s.uid);
-        return s;
-      }
-      return { ...s, state: "processing" as any, _processingStartedAt: entry.startedAt } as any;
-    });
+    return applyProcessingPure(raw, processingRef.current);
   }, []);
 
   // Single init call: services + connections + positions
@@ -144,7 +114,15 @@ export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (po
             break;
           case "action_error": {
             processingRef.current.delete(msg.data.uid);
-            setServices((prev) => [...prev]);
+            const clearInterval_ = processingIntervalsRef.current.get(msg.data.uid);
+            if (clearInterval_) { clearInterval(clearInterval_); processingIntervalsRef.current.delete(msg.data.uid); }
+            const raw = lastRawServicesRef.current;
+            if (raw.length > 0) {
+              const incoming = applyProcessing(raw);
+              setServices((prev) => arraysEqual(prev, incoming) ? prev : incoming);
+            } else {
+              setServices((prev) => prev.map((s) => s.uid === msg.data.uid ? { ...s, state: "exited" as any } : s));
+            }
             break;
           }
         }
@@ -178,6 +156,11 @@ export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (po
         wsRef.current.onclose = null;
         wsRef.current.close();
       }
+      // Clean up all processing intervals
+      for (const interval of processingIntervalsRef.current.values()) {
+        clearInterval(interval);
+      }
+      processingIntervalsRef.current.clear();
     };
   }, [connect]);
 
@@ -196,25 +179,43 @@ export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (po
     processingRef.current.set(uid, { expected: expectedState, startedAt, minDuration });
     actionTimestamps.current.set(uid, Math.floor(startedAt / 1000));
     setServices((prev) => prev.map((s) => s.uid === uid ? { ...s, state: "processing" as any, _processingStartedAt: startedAt } as any : s));
-    // Re-evaluate every 1s after minDuration until processing clears.
-    // Handles the case where the server stops broadcasting (hash unchanged).
-    if (minDuration > 0) {
-      const interval = setInterval(() => {
-        if (!processingRef.current.has(uid)) { clearInterval(interval); return; }
-        const elapsed = Date.now() - startedAt;
-        if (elapsed < minDuration) return;
-        const incoming = applyProcessing(lastRawServicesRef.current);
-        setServices((prev) => arraysEqual(prev, incoming) ? prev : incoming);
-        // applyProcessing deletes the entry when resolved or timed out (15s)
-        if (!processingRef.current.has(uid)) clearInterval(interval);
-      }, 1000);
-    }
+    // Clear any existing interval for this uid (e.g. rapid re-clicks)
+    const prevInterval = processingIntervalsRef.current.get(uid);
+    if (prevInterval) clearInterval(prevInterval);
+
+    // Re-evaluate every 1s until processing clears.
+    // Always create interval — even for minDuration=0 — so the 15s timeout safety net works
+    // when the server stops broadcasting (hash unchanged).
+    const interval = setInterval(() => {
+      if (!processingRef.current.has(uid)) {
+        clearInterval(interval);
+        processingIntervalsRef.current.delete(uid);
+        return;
+      }
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < minDuration) return;
+      const raw = lastRawServicesRef.current;
+      if (raw.length === 0) return;
+      const incoming = applyProcessing(raw);
+      setServices((prev) => arraysEqual(prev, incoming) ? prev : incoming);
+      if (!processingRef.current.has(uid)) {
+        clearInterval(interval);
+        processingIntervalsRef.current.delete(uid);
+      }
+    }, 1000);
+    processingIntervalsRef.current.set(uid, interval);
   }, [applyProcessing]);
 
   const clearProcessing = useCallback((uid: string) => {
     processingRef.current.delete(uid);
-    setServices((prev) => [...prev]);
-  }, []);
+    const interval = processingIntervalsRef.current.get(uid);
+    if (interval) { clearInterval(interval); processingIntervalsRef.current.delete(uid); }
+    const raw = lastRawServicesRef.current;
+    if (raw.length > 0) {
+      const incoming = applyProcessing(raw);
+      setServices((prev) => arraysEqual(prev, incoming) ? prev : incoming);
+    }
+  }, [applyProcessing]);
 
   const getLogsSince = useCallback((uid: string): number | undefined => {
     return actionTimestamps.current.get(uid);
