@@ -67,6 +67,15 @@ export interface DiscordConfig {
   downReminderMinutes: number;
 }
 
+export interface ContainerSettings {
+  /** false = no enviar notificaciones para este contenedor */
+  notificationsEnabled: boolean;
+  /** Override del umbral global de CPU (null = usar global) */
+  cpuThreshold: number | null;
+  /** Override del umbral global de memoria (null = usar global) */
+  memThreshold: number | null;
+}
+
 export type WSMessage =
   | { type: "services"; data: Service[] }
   | { type: "connections"; data: Connection[] }

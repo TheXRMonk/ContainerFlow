@@ -7,7 +7,8 @@ import fs from "fs";
 import { docker, discoverServices, discoverConnections, getContainerLogs, streamContainerLogs } from "./docker";
 import { pollStats, watchDockerEvents } from "./watcher";
 import { loadDiscordConfig, saveDiscordConfig, notifyStateChange, notifyResourceAlert, notifyUIAction, notifyActionError, testWebhook, checkDownServices } from "./discord";
-import type { Service, WSMessage, DiscordConfig } from "../shared/types";
+import { loadContainerSettings, saveContainerSettings } from "./container-settings";
+import type { Service, WSMessage, DiscordConfig, ContainerSettings } from "../shared/types";
 
 /** Directory for persistent data files (positions, env overrides) */
 const DATA_DIR = process.env.DATA_DIR || process.cwd();
@@ -450,6 +451,26 @@ app.post("/api/discord-config/test", async (c) => {
   }
 });
 
+// ── Container settings ──
+app.get("/api/container-settings", (c) => {
+  return c.json(loadContainerSettings());
+});
+
+app.put("/api/container-settings", async (c) => {
+  try {
+    const body = await c.req.json() as { uid: string; settings: ContainerSettings };
+    if (!body.uid || !body.settings) {
+      return c.json({ error: "Missing uid or settings" }, 400);
+    }
+    const all = loadContainerSettings();
+    all[body.uid] = body.settings;
+    saveContainerSettings(all);
+    return c.json({ ok: true });
+  } catch {
+    return c.json({ error: "Failed to save" }, 500);
+  }
+});
+
 // ── Cache headers for static assets ──
 app.use("/*", async (c, next) => {
   await next();
@@ -544,12 +565,17 @@ async function refreshStats(services: Service[]) {
       const discordConfig = loadDiscordConfig();
       if (discordConfig.enabled) {
         if (discordConfig.events.resourceAlerts) {
+          const containerSettings = loadContainerSettings();
           for (const stat of stats) {
-            if (stat.cpu >= discordConfig.thresholds.cpuPercent) {
-              notifyResourceAlert(stat.service, "cpu", stat.cpu, discordConfig.thresholds.cpuPercent, discordConfig);
+            const cs = containerSettings[stat.service];
+            if (cs && cs.notificationsEnabled === false) continue;
+            const cpuThreshold = cs?.cpuThreshold ?? discordConfig.thresholds.cpuPercent;
+            const memThreshold = cs?.memThreshold ?? discordConfig.thresholds.memPercent;
+            if (stat.cpu >= cpuThreshold) {
+              notifyResourceAlert(stat.service, "cpu", stat.cpu, cpuThreshold, discordConfig);
             }
-            if (stat.mem_percent >= discordConfig.thresholds.memPercent) {
-              notifyResourceAlert(stat.service, "memory", stat.mem_percent, discordConfig.thresholds.memPercent, discordConfig);
+            if (stat.mem_percent >= memThreshold) {
+              notifyResourceAlert(stat.service, "memory", stat.mem_percent, memThreshold, discordConfig);
             }
           }
         }

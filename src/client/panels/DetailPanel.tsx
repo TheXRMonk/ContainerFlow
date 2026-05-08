@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo, startTransition } from "react";
 import { X, Pause, Play, Square, RotateCw, Hammer, Trash2, Terminal, Network, Globe, Info as InfoIcon, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check, Loader2, AlertTriangle, Maximize2, ExternalLink, Pencil, HelpCircle } from "lucide-react";
-import type { Service, Stats, LogLine, WSMessage, Connection, DockerEvent } from "../../shared/types";
+import type { Service, Stats, LogLine, WSMessage, Connection, DockerEvent, ContainerSettings } from "../../shared/types";
 import { useT } from "../i18n";
 
 type Tab = "info" | "config" | "env" | "stats";
@@ -81,6 +81,41 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
   const [execLoading, setExecLoading] = useState(false);
   const [execResult, setExecResult] = useState<{ output: string; exitCode: number } | null>(null);
   const [execError, setExecError] = useState<string | null>(null);
+
+  // Container notification settings
+  const [containerSettings, setContainerSettings] = useState<ContainerSettings>({ notificationsEnabled: true, cpuThreshold: null, memThreshold: null });
+  const [csLoaded, setCsLoaded] = useState(false);
+  const [csSaving, setCsSaving] = useState(false);
+  const [csSaved, setCsSaved] = useState(false);
+
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    fetch("/api/container-settings", { headers })
+      .then((r) => r.ok ? r.json() : {})
+      .then((all: Record<string, ContainerSettings>) => {
+        if (all[service.uid]) setContainerSettings(all[service.uid]);
+        setCsLoaded(true);
+      })
+      .catch(() => setCsLoaded(true));
+  }, [service.uid, token]);
+
+  const saveContainerSettings = useCallback(async () => {
+    setCsSaving(true);
+    setCsSaved(false);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      await fetch("/api/container-settings", {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ uid: service.uid, settings: containerSettings }),
+      });
+      setCsSaved(true);
+      setTimeout(() => setCsSaved(false), 2000);
+    } catch {}
+    setCsSaving(false);
+  }, [service.uid, token, containerSettings]);
 
   // Scroll modal to bottom when opened or when logs arrive
   useEffect(() => {
@@ -493,6 +528,25 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                   </div>
                 </div>
               )}
+              {/* Warning banners */}
+              {service.memory_limit === 0 && (
+                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-lg px-3 py-2 mb-3 flex items-center gap-2">
+                  <AlertTriangle size={14} className="shrink-0" />
+                  {t("detail.noMemoryLimit")}
+                </div>
+              )}
+              {service.cpu_quota === 0 && (
+                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-lg px-3 py-2 mb-3 flex items-center gap-2">
+                  <AlertTriangle size={14} className="shrink-0" />
+                  {t("detail.noCpuLimit")}
+                </div>
+              )}
+              {(service.restart_policy === "no" || service.restart_policy === "") && (
+                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-lg px-3 py-2 mb-3 flex items-center gap-2">
+                  <AlertTriangle size={14} className="shrink-0" />
+                  {t("detail.weakRestartPolicy")}
+                </div>
+              )}
               {service.status && (
                 <DetailRow label={t("detail.status")} value={service.status} />
               )}
@@ -804,6 +858,40 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
         {/* Stats tab */}
         {activeTab === "stats" && (
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+            {/* Warning banners */}
+            {service.memory_limit === 0 && (
+              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-lg px-3 py-2 flex items-center gap-2">
+                <AlertTriangle size={14} className="shrink-0" />
+                {t("detail.noMemoryLimit")}
+              </div>
+            )}
+            {service.cpu_quota === 0 && (
+              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-lg px-3 py-2 flex items-center gap-2">
+                <AlertTriangle size={14} className="shrink-0" />
+                {t("detail.noCpuLimit")}
+              </div>
+            )}
+            {(service.restart_policy === "no" || service.restart_policy === "") && (
+              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-lg px-3 py-2 flex items-center gap-2">
+                <AlertTriangle size={14} className="shrink-0" />
+                {t("detail.weakRestartPolicy")}
+              </div>
+            )}
+
+            {/* Notifications toggle */}
+            {csLoaded && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-300">{t("detail.notifications")}</span>
+                <button
+                  type="button"
+                  onClick={() => setContainerSettings((s) => ({ ...s, notificationsEnabled: !s.notificationsEnabled }))}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${containerSettings.notificationsEnabled ? "bg-cyan-600" : "bg-slate-600"}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${containerSettings.notificationsEnabled ? "translate-x-4" : "translate-x-0"}`} />
+                </button>
+              </div>
+            )}
+
             {stats ? (
               <>
                 <div className="grid grid-cols-2 gap-3">
@@ -811,36 +899,49 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                   <StatCard label={t("detail.memory")} value={`${stats.mem_mb.toFixed(0)} MB`} extra={`${stats.mem_percent.toFixed(1)}%`} color={stats.mem_percent > 80 ? "text-red-400" : stats.mem_percent > 50 ? "text-yellow-400" : "text-emerald-400"} />
                 </div>
 
-                {/* CPU bar */}
-                <div>
-                  <div className="flex justify-between text-xs text-slate-500 mb-1">
-                    <span>{t("detail.cpuUsage")}</span>
-                    <span>{stats.cpu.toFixed(1)}%</span>
-                  </div>
-                  <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${stats.cpu > 80 ? "bg-red-500" : stats.cpu > 50 ? "bg-yellow-500" : "bg-emerald-500"}`}
-                      style={{ width: `${Math.min(stats.cpu, 100)}%` }}
-                    />
-                  </div>
-                </div>
+                {/* CPU bar with draggable threshold */}
+                <ThresholdBar
+                  label={t("detail.cpuUsage")}
+                  value={stats.cpu}
+                  threshold={containerSettings.cpuThreshold ?? 80}
+                  isCustom={containerSettings.cpuThreshold !== null}
+                  showThreshold={containerSettings.notificationsEnabled}
+                  thresholdLabel={t("detail.cpuThreshold")}
+                  tagLabel={containerSettings.cpuThreshold !== null ? t("detail.custom") : t("detail.global")}
+                  hintLabel={t("detail.thresholdHint")}
+                  onThresholdChange={(v) => setContainerSettings((s) => ({ ...s, cpuThreshold: v }))}
+                  onReset={() => setContainerSettings((s) => ({ ...s, cpuThreshold: null }))}
+                  formatValue={(v) => `${v.toFixed(1)}%`}
+                />
 
-                {/* Memory bar */}
-                <div>
-                  <div className="flex justify-between text-xs text-slate-500 mb-1">
-                    <span>{t("detail.memoryUsage")}</span>
-                    <span>{stats.mem_mb.toFixed(0)} MB ({stats.mem_percent.toFixed(1)}%)</span>
-                  </div>
-                  <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${stats.mem_percent > 80 ? "bg-red-500" : stats.mem_percent > 50 ? "bg-yellow-500" : "bg-emerald-500"}`}
-                      style={{ width: `${Math.min(stats.mem_percent, 100)}%` }}
-                    />
-                  </div>
-                </div>
+                {/* Memory bar with draggable threshold */}
+                <ThresholdBar
+                  label={t("detail.memoryUsage")}
+                  value={stats.mem_percent}
+                  threshold={containerSettings.memThreshold ?? 90}
+                  isCustom={containerSettings.memThreshold !== null}
+                  showThreshold={containerSettings.notificationsEnabled}
+                  thresholdLabel={t("detail.memThreshold")}
+                  tagLabel={containerSettings.memThreshold !== null ? t("detail.custom") : t("detail.global")}
+                  hintLabel={t("detail.thresholdHint")}
+                  onThresholdChange={(v) => setContainerSettings((s) => ({ ...s, memThreshold: v }))}
+                  onReset={() => setContainerSettings((s) => ({ ...s, memThreshold: null }))}
+                  formatValue={() => `${stats.mem_mb.toFixed(0)} MB (${stats.mem_percent.toFixed(1)}%)`}
+                />
               </>
             ) : (
               <div className="text-slate-500 text-sm text-center py-8">{t("detail.noStats")}</div>
+            )}
+
+            {/* Save button */}
+            {csLoaded && (
+              <button
+                onClick={saveContainerSettings}
+                disabled={csSaving}
+                className="w-full px-3 py-1.5 rounded text-xs font-medium text-white bg-cyan-700 hover:bg-cyan-600 transition-colors disabled:opacity-50"
+              >
+                {csSaving ? t("detail.savingSettings") : csSaved ? t("detail.settingsSaved") : t("detail.saveSettings")}
+              </button>
             )}
           </div>
         )}
@@ -1080,6 +1181,118 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
     <div>
       <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-0.5">{label}</span>
       <span className={`text-sm text-slate-200 ${mono ? "font-mono" : ""} break-all`}>{value}</span>
+    </div>
+  );
+}
+
+function ThresholdBar({ label, value, threshold, isCustom, showThreshold, thresholdLabel, tagLabel, hintLabel, onThresholdChange, onReset, formatValue }: {
+  label: string;
+  value: number;
+  threshold: number;
+  isCustom: boolean;
+  showThreshold: boolean;
+  thresholdLabel: string;
+  tagLabel: string;
+  hintLabel: string;
+  onThresholdChange: (v: number) => void;
+  onReset: () => void;
+  formatValue: (v: number) => string;
+}) {
+  const barRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const [hovering, setHovering] = useState(false);
+
+  const calcPercent = useCallback((clientX: number) => {
+    if (!barRef.current) return threshold;
+    const rect = barRef.current.getBoundingClientRect();
+    const pct = Math.round(((clientX - rect.left) / rect.width) * 100);
+    return Math.max(5, Math.min(100, pct));
+  }, [threshold]);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => { onThresholdChange(calcPercent(e.clientX)); };
+    const onUp = () => { setDragging(false); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [dragging, calcPercent, onThresholdChange]);
+
+  // Touch support
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: TouchEvent) => { if (e.touches[0]) onThresholdChange(calcPercent(e.touches[0].clientX)); };
+    const onEnd = () => { setDragging(false); };
+    window.addEventListener("touchmove", onMove);
+    window.addEventListener("touchend", onEnd);
+    return () => { window.removeEventListener("touchmove", onMove); window.removeEventListener("touchend", onEnd); };
+  }, [dragging, calcPercent, onThresholdChange]);
+
+  const barColor = showThreshold
+    ? (value > threshold ? "bg-red-500" : value > 50 ? "bg-yellow-500" : "bg-emerald-500")
+    : (value > 80 ? "bg-red-500" : value > 50 ? "bg-yellow-500" : "bg-emerald-500");
+  const showTooltip = dragging || hovering;
+
+  return (
+    <div>
+      <div className="flex justify-between text-xs text-slate-500 mb-1">
+        <span>{label}</span>
+        <span>{formatValue(value)}</span>
+      </div>
+      <div
+        ref={barRef}
+        className={`relative ${showThreshold ? "h-3" : "h-2"} bg-slate-800 rounded-full group ${showThreshold ? "cursor-pointer" : ""}`}
+        onClick={(e) => { if (showThreshold && !dragging) onThresholdChange(calcPercent(e.clientX)); }}
+      >
+        {/* Usage fill */}
+        <div
+          className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ${barColor}`}
+          style={{ width: `${Math.min(value, 100)}%` }}
+        />
+        {/* Threshold handle — only when notifications enabled */}
+        {showThreshold && (
+          <div
+            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 select-none touch-none"
+            style={{ left: `${threshold}%` }}
+            onMouseDown={(e) => { e.preventDefault(); setDragging(true); }}
+            onTouchStart={(e) => { e.preventDefault(); setDragging(true); }}
+            onMouseEnter={() => setHovering(true)}
+            onMouseLeave={() => setHovering(false)}
+          >
+            {/* Vertical line */}
+            <div className={`w-0.5 h-5 rounded-full transition-colors ${dragging ? "bg-amber-300" : "bg-amber-400/80 group-hover:bg-amber-400"}`} />
+            {/* Drag handle diamond */}
+            <div className={`absolute -top-1 left-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45 rounded-[1px] border transition-colors cursor-grab active:cursor-grabbing ${
+              dragging ? "bg-amber-300 border-amber-200" : "bg-amber-400/90 border-amber-500/50 group-hover:bg-amber-400"
+            }`} />
+            {/* Tooltip */}
+            {showTooltip && (
+              <div className="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-slate-700 rounded text-[10px] font-mono text-amber-300 whitespace-nowrap shadow-lg">
+                {threshold}%
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      {/* Label row — only when notifications enabled */}
+      {showThreshold && (
+        <div className="flex items-center justify-between mt-1">
+          <span className="text-[10px] text-slate-600">{hintLabel}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-amber-400/70 font-mono">{threshold}%</span>
+            {isCustom && (
+              <button
+                onClick={onReset}
+                className="text-[9px] text-slate-500 hover:text-slate-300 transition-colors"
+                title="Reset to global"
+              >
+                reset
+              </button>
+            )}
+            <span className="text-[9px] text-slate-600">{tagLabel}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

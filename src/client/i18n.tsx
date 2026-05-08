@@ -105,6 +105,23 @@ const en = {
   "detail.memory": "Memory",
   "detail.noStats": "No stats available",
 
+  // Detail panel - Warning banners
+  "detail.noMemoryLimit": "No memory limit configured in Docker",
+  "detail.noCpuLimit": "No CPU limit configured in Docker",
+  "detail.weakRestartPolicy": "Restart policy: none — container won't restart automatically if it stops",
+
+  // Detail panel - Notification settings
+  "detail.notifications": "Notifications",
+  "detail.notificationsEnabled": "Enabled",
+  "detail.cpuThreshold": "CPU threshold",
+  "detail.memThreshold": "Memory threshold",
+  "detail.global": "(global)",
+  "detail.custom": "(custom)",
+  "detail.saveSettings": "Save",
+  "detail.settingsSaved": "Saved",
+  "detail.savingSettings": "Saving...",
+  "detail.thresholdHint": "Drag line to set alert threshold",
+
   // Detail panel - Actions / Confirmations
   "detail.actionSuccess": "successful",
   "detail.actionFailed": "Failed to",
@@ -286,6 +303,23 @@ const es: Record<TranslationKey, string> = {
   "detail.memoryUsage": "Uso de Memoria",
   "detail.memory": "Memoria",
   "detail.noStats": "No hay estad\u00edsticas disponibles",
+
+  // Detail panel - Warning banners
+  "detail.noMemoryLimit": "Sin l\u00edmite de memoria configurado en Docker",
+  "detail.noCpuLimit": "Sin l\u00edmite de CPU configurado en Docker",
+  "detail.weakRestartPolicy": "Restart policy: none \u2014 el contenedor no se reiniciar\u00e1 autom\u00e1ticamente si se detiene",
+
+  // Detail panel - Notification settings
+  "detail.notifications": "Notificaciones",
+  "detail.notificationsEnabled": "Habilitadas",
+  "detail.cpuThreshold": "Umbral de CPU",
+  "detail.memThreshold": "Umbral de memoria",
+  "detail.global": "(global)",
+  "detail.custom": "(personalizado)",
+  "detail.saveSettings": "Guardar",
+  "detail.settingsSaved": "Guardado",
+  "detail.savingSettings": "Guardando...",
+  "detail.thresholdHint": "Arrastra la l\u00ednea para configurar el umbral de alerta",
 
   // Detail panel - Actions / Confirmations
   "detail.actionSuccess": "exitoso",
