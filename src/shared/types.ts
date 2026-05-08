@@ -50,6 +50,23 @@ export interface LogLine {
   stream: "stdout" | "stderr";
 }
 
+export interface DiscordConfig {
+  enabled: boolean;
+  webhookUrl: string;
+  events: {
+    containerStateChanges: boolean;
+    resourceAlerts: boolean;
+    uiActions: boolean;
+    actionErrors: boolean;
+  };
+  thresholds: {
+    cpuPercent: number;
+    memPercent: number;
+  };
+  cooldownMinutes: number;
+  downReminderMinutes: number;
+}
+
 export type WSMessage =
   | { type: "services"; data: Service[] }
   | { type: "connections"; data: Connection[] }

@@ -76,7 +76,7 @@ export async function discoverServices(all: boolean, projects: string[]): Promis
       env: (info?.Config?.Env || []) as string[],
       restart_policy: info?.HostConfig?.RestartPolicy?.Name || "",
       memory_limit: info?.HostConfig?.Memory || 0,
-      cpu_quota: info?.HostConfig?.CpuQuota || 0,
+      cpu_quota: info?.HostConfig?.CpuQuota || (info?.HostConfig?.NanoCpus ? Math.round(info.HostConfig.NanoCpus / 1e4) : 0),
       health_status: healthStatus,
       health_log: healthLog,
       exit_code: exitCode,

@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Lock, Eye, EyeOff, Terminal } from "lucide-react";
+import { useT } from "../i18n";
 
 interface LoginScreenProps {
   onAuth: (token: string) => void;
 }
 
 export function LoginScreen({ onAuth }: LoginScreenProps) {
+  const { t } = useT();
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [showToken, setShowToken] = useState(false);
@@ -31,8 +33,8 @@ export function LoginScreen({ onAuth }: LoginScreenProps) {
 
     hackerLog([
       "$ containerflow connect --auth",
-      "> Establishing secure connection...",
-      "> Validating AUTH_TOKEN...",
+      `> ${t("login.establishingConnection")}`,
+      `> ${t("login.validatingToken")}`,
     ], async () => {
       try {
         const res = await fetch("/api/health", {
@@ -40,23 +42,23 @@ export function LoginScreen({ onAuth }: LoginScreenProps) {
         });
         if (res.ok) {
           hackerLog([
-            "> Token accepted",
-            "> Loading Docker socket...",
-            "> Connection established!",
+            `> ${t("login.tokenAccepted")}`,
+            `> ${t("login.loadingDocker")}`,
+            `> ${t("login.connectionEstablished")}`,
           ], () => {
             localStorage.setItem("df:token", token);
             setConnected(true);
             setTimeout(() => onAuth(token), 800);
           });
         } else {
-          hackerLog(["> ERROR: Invalid token", "> Connection refused"], () => {
-            setError("Token invalido");
+          hackerLog([`> ${t("login.errorInvalidToken")}`, `> ${t("login.errorConnectionRefused")}`], () => {
+            setError(t("login.invalidToken"));
             setConnecting(false);
           });
         }
       } catch {
-        hackerLog(["> ERROR: Connection failed"], () => {
-          setError("No se pudo conectar");
+        hackerLog([`> ${t("login.errorConnectionFailed")}`], () => {
+          setError(t("login.connectionFailed"));
           setConnecting(false);
         });
       }
@@ -110,7 +112,7 @@ export function LoginScreen({ onAuth }: LoginScreenProps) {
             }`}
           >
             <Terminal size={14} />
-            {connecting ? "Connecting..." : "Connect"}
+            {connecting ? t("login.connecting") : t("login.connect")}
           </button>
         </form>
 
@@ -122,7 +124,7 @@ export function LoginScreen({ onAuth }: LoginScreenProps) {
                 key={i}
                 className={`${
                   line.includes("ERROR") ? "text-red-400" :
-                  line.includes("accepted") || line.includes("established") ? "text-emerald-400" :
+                  line.includes("accepted") || line.includes("established") || line.includes("aceptado") || line.includes("establecida") ? "text-emerald-400" :
                   line.startsWith("$") ? "text-cyan-400" : "text-slate-400"
                 } animate-[fadeIn_0.15s_ease-out]`}
               >

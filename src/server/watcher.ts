@@ -18,10 +18,17 @@ export async function pollStats(services: Service[]): Promise<Stats[]> {
       const sysDelta =
         raw.cpu_stats.system_cpu_usage - raw.precpu_stats.system_cpu_usage;
 
-      const cpu =
+      const onlineCpus = raw.cpu_stats.online_cpus || 1;
+      const cpuHost =
         sysDelta > 0
-          ? (cpuDelta / sysDelta) * (raw.cpu_stats.online_cpus || 1) * 100
+          ? (cpuDelta / sysDelta) * onlineCpus * 100
           : 0;
+
+      // If container has a CPU limit, show % relative to its allocation
+      // cpu_quota: 100000 = 1 core; cpuHost: % of one host core
+      const cpu = svc.cpu_quota > 0
+        ? (cpuHost * 100000 / svc.cpu_quota)
+        : cpuHost;
 
       const memUsage = raw.memory_stats.usage || 0;
       const memLimit = raw.memory_stats.limit || 1;

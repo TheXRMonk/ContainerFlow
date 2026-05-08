@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { RotateCw, Square, Play, Trash2, Terminal, ExternalLink, Hammer } from "lucide-react";
 import type { Service } from "../../shared/types";
+import { useT } from "../i18n";
 
 interface NodeContextMenuProps {
   position: { x: number; y: number };
@@ -11,6 +12,7 @@ interface NodeContextMenuProps {
 }
 
 export function NodeContextMenu({ position, service, onAction, onOpenLogs, onClose }: NodeContextMenuProps) {
+  const { t } = useT();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -48,23 +50,23 @@ export function NodeContextMenu({ position, service, onAction, onOpenLogs, onClo
     >
       {isRunning ? (
         <>
-          <MenuItem icon={RotateCw} label="Restart" color="text-yellow-400" onClick={() => { onAction("restart"); onClose(); }} />
-          <MenuItem icon={Square} label="Stop" color="text-red-400" onClick={() => { onAction("stop"); onClose(); }} />
+          <MenuItem icon={RotateCw} label={t("actions.restart")} color="text-yellow-400" onClick={() => { onAction("restart"); onClose(); }} />
+          <MenuItem icon={Square} label={t("actions.stop")} color="text-red-400" onClick={() => { onAction("stop"); onClose(); }} />
         </>
       ) : (
         <>
-          <MenuItem icon={Play} label="Start" color="text-emerald-400" onClick={() => { onAction("start"); onClose(); }} />
-          <MenuItem icon={Trash2} label="Remove" color="text-red-400" onClick={() => { onAction("remove"); onClose(); }} />
+          <MenuItem icon={Play} label={t("actions.start")} color="text-emerald-400" onClick={() => { onAction("start"); onClose(); }} />
+          <MenuItem icon={Trash2} label={t("actions.remove")} color="text-red-400" onClick={() => { onAction("remove"); onClose(); }} />
         </>
       )}
       {service.compose_file && (
         <>
           <div className="border-t border-slate-700/50 my-1" />
-          <MenuItem icon={Hammer} label="Rebuild" color="text-cyan-400" onClick={() => { onAction("rebuild"); onClose(); }} />
+          <MenuItem icon={Hammer} label={t("actions.rebuild")} color="text-cyan-400" onClick={() => { onAction("rebuild"); onClose(); }} />
         </>
       )}
       <div className="border-t border-slate-700/50 my-1" />
-      <MenuItem icon={Terminal} label="Open Logs" color="text-cyan-400" onClick={() => { onOpenLogs(); onClose(); }} />
+      <MenuItem icon={Terminal} label={t("actions.openLogs")} color="text-cyan-400" onClick={() => { onOpenLogs(); onClose(); }} />
       {isRunning && firstPort && (
         <a
           href={`http://${window.location.hostname}:${firstPort.host}`}
@@ -74,7 +76,7 @@ export function NodeContextMenu({ position, service, onAction, onOpenLogs, onClo
           onClick={onClose}
         >
           <ExternalLink size={14} className="text-slate-400" />
-          <span>Open :{firstPort.host}</span>
+          <span>{t("actions.open")} :{firstPort.host}</span>
         </a>
       )}
     </div>

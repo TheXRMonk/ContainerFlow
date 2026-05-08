@@ -15,6 +15,7 @@ import "@xyflow/react/dist/style.css";
 import { ServiceNode } from "./nodes/ServiceNode";
 import { GroupNode } from "./nodes/GroupNode";
 import { useDocker } from "./hooks/useDocker";
+import { I18nProvider, useT } from "./i18n";
 import { createStatsStore, StatsStoreContext } from "./hooks/useStatsStore";
 import { buildLayout, computeEdges, NODE_WIDTH, NODE_HEIGHT, GROUP_PADDING, GROUP_HEADER } from "./engine/layout";
 import { DetailPanel } from "./panels/DetailPanel";
@@ -64,12 +65,18 @@ export default function App() {
   }, []);
 
   if (needsAuth === null) return <div className="h-screen w-screen bg-slate-950" />;
-  if (needsAuth) return <LoginScreen onAuth={(t) => { setAuthToken(t); setNeedsAuth(false); }} />;
 
-  return <Dashboard token={authToken || ""} />;
+  return (
+    <I18nProvider>
+      {needsAuth
+        ? <LoginScreen onAuth={(tk) => { setAuthToken(tk); setNeedsAuth(false); }} />
+        : <Dashboard token={authToken || ""} />}
+    </I18nProvider>
+  );
 }
 
 function Dashboard({ token }: { token: string }) {
+  const { t } = useT();
   const statsStore = useMemo(() => createStatsStore(), []);
   const savedPositions = useRef<Record<string, { x: number; y: number }>>({});
   const onPositions = useCallback((pos: Record<string, { x: number; y: number }>) => {
@@ -480,7 +487,7 @@ function Dashboard({ token }: { token: string }) {
       />
 
       {activePage === "monitoring" && <MonitoringPage events={events} />}
-      {activePage === "settings" && <SettingsPage projects={projects} servicesCount={services.length} />}
+      {activePage === "settings" && <SettingsPage projects={projects} servicesCount={services.length} token={token} />}
 
       {/* Canvas — inset (only visible on dashboard) */}
       <div className={`flex-1 min-h-0 relative mx-2 mt-1 rounded-xl overflow-hidden ring-1 ring-slate-700/60 shadow-[inset_0_2px_12px_rgba(0,0,0,0.5)] ${activePage !== "dashboard" ? "hidden" : ""}`}>
@@ -577,7 +584,7 @@ function Dashboard({ token }: { token: string }) {
               onClick={() => setFilterOpen((v) => !v)}
               className="flex items-center gap-2 text-sm text-slate-400 bg-slate-800/80 backdrop-blur-sm hover:bg-slate-700/80 border border-slate-700/50 px-3 py-1.5 rounded-md transition-colors"
             >
-              Projects
+              {t("filter.projects")}
               <span className="text-cyan-400 font-medium">
                 {projects.length - hiddenProjects.size}/{projects.length}
               </span>
@@ -602,7 +609,7 @@ function Dashboard({ token }: { token: string }) {
                   }`}>
                     {hiddenProjects.size === 0 && <Check size={12} className="text-white" />}
                   </div>
-                  <span className="text-slate-300 font-medium">All</span>
+                  <span className="text-slate-300 font-medium">{t("filter.all")}</span>
                   <span className="ml-auto flex items-center gap-1.5 text-xs">
                     <span className="text-emerald-500/70">{services.filter((s) => s.state === "running").length}</span>
                     <span className="text-slate-600">/</span>
@@ -727,18 +734,18 @@ function Dashboard({ token }: { token: string }) {
               <WifiOff size={12} className="text-red-500" />
             )}
             <span className={connected ? "text-emerald-500" : "text-red-500"}>
-              {connected ? "Live" : "Offline"}
+              {connected ? t("footer.live") : t("footer.offline")}
             </span>
           </div>
           <span>
             <span className="text-emerald-400">{filteredServices.filter((s) => s.state === "running").length}</span>
-            <span>/{filteredServices.length} containers</span>
+            <span>/{filteredServices.length} {t("footer.containers")}</span>
           </span>
         </div>
 
         <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-4">
-          <span>{services.length} containers</span>
-          <span>{projects.length} projects</span>
+          <span>{services.length} {t("footer.containers")}</span>
+          <span>{projects.length} {t("footer.projects")}</span>
         </div>
 
         <span>AlteonX</span>

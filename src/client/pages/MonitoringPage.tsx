@@ -1,5 +1,6 @@
 import { Activity, Play, Square, RotateCcw, AlertTriangle } from "lucide-react";
 import type { DockerEvent } from "../../shared/types";
+import { useT } from "../i18n";
 
 function timeAgo(ts: number): string {
   const diff = Math.floor((Date.now() / 1000) - ts);
@@ -37,6 +38,7 @@ interface MonitoringPageProps {
 }
 
 export function MonitoringPage({ events }: MonitoringPageProps) {
+  const { t } = useT();
   const sorted = [...events].reverse();
 
   return (
@@ -46,8 +48,8 @@ export function MonitoringPage({ events }: MonitoringPageProps) {
         <div className="flex items-center gap-3 mb-6">
           <Activity size={24} className="text-cyan-400" />
           <div>
-            <h1 className="text-xl font-bold text-white">Event History</h1>
-            <p className="text-sm text-slate-500">Docker container events in real-time</p>
+            <h1 className="text-xl font-bold text-white">{t("monitoring.title")}</h1>
+            <p className="text-sm text-slate-500">{t("monitoring.subtitle")}</p>
           </div>
         </div>
 
@@ -56,7 +58,7 @@ export function MonitoringPage({ events }: MonitoringPageProps) {
           {sorted.length === 0 ? (
             <div className="px-6 py-12 text-center text-slate-500">
               <Activity size={32} className="mx-auto mb-3 opacity-40" />
-              <p>No events yet. Events will appear here as containers start, stop, or restart.</p>
+              <p>{t("monitoring.noEvents")}</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-700/40">
@@ -79,8 +81,8 @@ export function MonitoringPage({ events }: MonitoringPageProps) {
         {/* Alert Rules placeholder */}
         <div className="mt-8 bg-slate-800/30 border border-dashed border-slate-700/60 rounded-xl p-6 text-center">
           <AlertTriangle size={24} className="mx-auto mb-2 text-slate-600" />
-          <p className="text-sm text-slate-500 font-medium">Alert Rules</p>
-          <p className="text-xs text-slate-600 mt-1">Configure alerting rules for container events — coming soon</p>
+          <p className="text-sm text-slate-500 font-medium">{t("monitoring.alertRules")}</p>
+          <p className="text-xs text-slate-600 mt-1">{t("monitoring.alertRulesDesc")}</p>
         </div>
       </div>
     </div>

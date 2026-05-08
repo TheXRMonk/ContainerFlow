@@ -6,10 +6,14 @@ import path from "path";
 import fs from "fs";
 import { docker, discoverServices, discoverConnections, getContainerLogs, streamContainerLogs } from "./docker";
 import { pollStats, watchDockerEvents } from "./watcher";
-import type { Service, WSMessage } from "../shared/types";
+import { loadDiscordConfig, saveDiscordConfig, notifyStateChange, notifyResourceAlert, notifyUIAction, notifyActionError, testWebhook, checkDownServices } from "./discord";
+import type { Service, WSMessage, DiscordConfig } from "../shared/types";
+
+/** Directory for persistent data files (positions, env overrides) */
+const DATA_DIR = process.env.DATA_DIR || process.cwd();
 
 /** Env-file overrides per compose file (persisted to file) */
-const ENV_FILES_FILE = path.join(process.cwd(), ".dockerflow-env-files.json");
+const ENV_FILES_FILE = path.join(DATA_DIR, ".dockerflow-env-files.json");
 
 function loadEnvFiles(): Record<string, string> {
   try {
@@ -156,14 +160,24 @@ app.get("/api/init", async (c) => {
   return c.json({ services, connections, positions });
 });
 
+// ── Helper: get service uid from container inspect info ──
+function getContainerUid(info: any): string {
+  const project = info.Config?.Labels?.["com.docker.compose.project"] || "standalone";
+  const service = info.Config?.Labels?.["com.docker.compose.service"] || info.Name?.replace(/^\//, "") || "unknown";
+  return `${project}/${service}`;
+}
+
 // ── Container actions ──
 app.post("/api/containers/:id/stop", async (c) => {
   const id = c.req.param("id");
   if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
   try {
     const container = docker.getContainer(id);
+    const info = await container.inspect();
     await container.stop();
     immediateRefresh();
+    const uid = getContainerUid(info);
+    try { notifyUIAction(uid, "stop", loadDiscordConfig()); } catch {}
     return c.json({ ok: true });
   } catch (err: any) {
     if (err?.statusCode === 304) return c.json({ ok: true, message: "Already stopped" });
@@ -176,8 +190,11 @@ app.post("/api/containers/:id/start", async (c) => {
   if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
   try {
     const container = docker.getContainer(id);
+    const info = await container.inspect();
     await container.start();
     immediateRefresh();
+    const uid = getContainerUid(info);
+    try { notifyUIAction(uid, "start", loadDiscordConfig()); } catch {}
     return c.json({ ok: true });
   } catch (err: any) {
     if (err?.statusCode === 304) return c.json({ ok: true, message: "Already running" });
@@ -190,8 +207,11 @@ app.post("/api/containers/:id/restart", async (c) => {
   if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
   try {
     const container = docker.getContainer(id);
+    const info = await container.inspect();
     await container.restart();
     immediateRefresh();
+    const uid = getContainerUid(info);
+    try { notifyUIAction(uid, "restart", loadDiscordConfig()); } catch {}
     return c.json({ ok: true });
   } catch (err: any) {
     return c.json({ error: err?.message || "Failed to restart container" }, 500);
@@ -220,11 +240,17 @@ app.post("/api/containers/:id/rebuild", async (c) => {
     proc.exited.then(async (exitCode) => {
       if (exitCode !== 0) {
         const stderr = await new Response(proc.stderr).text();
-        broadcast({ type: "action_error", data: { uid, action: "rebuild", error: stderr || `Rebuild failed with exit code ${exitCode}` } });
+        const errorMsg = stderr || `Rebuild failed with exit code ${exitCode}`;
+        broadcast({ type: "action_error", data: { uid, action: "rebuild", error: errorMsg } });
+        try { notifyActionError(uid, "rebuild", errorMsg, loadDiscordConfig()); } catch {}
+      } else {
+        try { notifyUIAction(uid, "rebuild", loadDiscordConfig()); } catch {}
       }
       scheduleRefresh();
     }).catch((err) => {
-      broadcast({ type: "action_error", data: { uid, action: "rebuild", error: err?.message || "Rebuild failed" } });
+      const errorMsg = err?.message || "Rebuild failed";
+      broadcast({ type: "action_error", data: { uid, action: "rebuild", error: errorMsg } });
+      try { notifyActionError(uid, "rebuild", errorMsg, loadDiscordConfig()); } catch {}
     });
     return c.json({ ok: true });
   } catch (err: any) {
@@ -334,7 +360,7 @@ app.get("/api/logs/:id", async (c) => {
 });
 
 // ── Node positions (persisted to file) ──
-const POSITIONS_FILE = path.join(process.cwd(), ".dockerflow-positions.json");
+const POSITIONS_FILE = path.join(DATA_DIR, ".dockerflow-positions.json");
 
 app.get("/api/positions", (c) => {
   try {
@@ -389,6 +415,38 @@ app.get("/api/env-files/detect/:id", async (c) => {
     return c.json({ files: envFiles, composeFile });
   } catch (err: any) {
     return c.json({ error: err?.message || "Failed to detect env files" }, 500);
+  }
+});
+
+// ── Discord config ──
+app.get("/api/discord-config", (c) => {
+  return c.json(loadDiscordConfig());
+});
+
+app.put("/api/discord-config", async (c) => {
+  try {
+    const body = await c.req.json() as DiscordConfig;
+    if (body.webhookUrl && !body.webhookUrl.startsWith("https://discord.com/api/webhooks/")) {
+      return c.json({ error: "Invalid webhook URL. Must start with https://discord.com/api/webhooks/" }, 400);
+    }
+    saveDiscordConfig(body);
+    return c.json({ ok: true });
+  } catch {
+    return c.json({ error: "Failed to save" }, 500);
+  }
+});
+
+app.post("/api/discord-config/test", async (c) => {
+  try {
+    const body = await c.req.json();
+    const url = body?.webhookUrl;
+    if (!url || !url.startsWith("https://discord.com/api/webhooks/")) {
+      return c.json({ error: "Invalid webhook URL" }, 400);
+    }
+    const result = await testWebhook(url);
+    return c.json(result);
+  } catch {
+    return c.json({ error: "Failed to test webhook" }, 500);
   }
 });
 
@@ -481,6 +539,23 @@ async function refreshStats(services: Service[]) {
   try {
     const stats = await pollStats(services);
     broadcast({ type: "stats", data: stats });
+    // Check resource thresholds and down services for Discord alerts
+    try {
+      const discordConfig = loadDiscordConfig();
+      if (discordConfig.enabled) {
+        if (discordConfig.events.resourceAlerts) {
+          for (const stat of stats) {
+            if (stat.cpu >= discordConfig.thresholds.cpuPercent) {
+              notifyResourceAlert(stat.service, "cpu", stat.cpu, discordConfig.thresholds.cpuPercent, discordConfig);
+            }
+            if (stat.mem_percent >= discordConfig.thresholds.memPercent) {
+              notifyResourceAlert(stat.service, "memory", stat.mem_percent, discordConfig.thresholds.memPercent, discordConfig);
+            }
+          }
+        }
+        checkDownServices(discordConfig);
+      }
+    } catch {}
   } catch (err) {
     console.error("Stats error:", err);
   } finally {
@@ -514,6 +589,10 @@ function immediateRefresh() {
 watchDockerEvents((event) => {
   broadcast({ type: "docker_event", data: event });
   scheduleRefresh();
+  try {
+    const config = loadDiscordConfig();
+    notifyStateChange(event.service, event.action, config);
+  } catch {}
 });
 
 // ── Stats polling ──

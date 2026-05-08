@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo, startTransition } from "react";
 import { X, Pause, Play, Square, RotateCw, Hammer, Trash2, Terminal, Network, Globe, Info as InfoIcon, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check, Loader2, AlertTriangle, Maximize2, ExternalLink, Pencil, HelpCircle } from "lucide-react";
 import type { Service, Stats, LogLine, WSMessage, Connection, DockerEvent } from "../../shared/types";
+import { useT } from "../i18n";
 
 type Tab = "info" | "config" | "env" | "stats";
 
@@ -21,11 +22,18 @@ const SYSTEM_ENV_KEYS = new Set([
   "MONGO_VERSION", "MONGO_MAJOR", "MONGO_PACKAGE", "MONGO_REPO",
 ]);
 
-const TABS: { id: Tab; label: string; icon: typeof InfoIcon }[] = [
-  { id: "info", label: "Info", icon: InfoIcon },
-  { id: "stats", label: "Stats", icon: Activity },
-  { id: "env", label: "Env", icon: Variable },
-  { id: "config", label: "Config", icon: Settings },
+const TAB_KEYS = {
+  info: "detail.info",
+  stats: "detail.stats",
+  env: "detail.env",
+  config: "detail.config",
+} as const;
+
+const TABS: { id: Tab; icon: typeof InfoIcon }[] = [
+  { id: "info", icon: InfoIcon },
+  { id: "stats", icon: Activity },
+  { id: "env", icon: Variable },
+  { id: "config", icon: Settings },
 ];
 
 interface DetailPanelProps {
@@ -49,6 +57,7 @@ interface DetailPanelProps {
 }
 
 export function DetailPanel({ service, stats, logLines, token, closing, onClose, onAction, clearProcessing, sendMessage, clearLogLines, connections, services, getLogsSince, initialLogsFullscreen, envFiles, onEnvFileChange, events }: DetailPanelProps) {
+  const { t } = useT();
   const [initialLogs, setInitialLogs] = useState<LogLine[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -123,17 +132,17 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
       const res = await fetch(`/api/containers/${service.id}/${action}`, { method: "POST", headers });
       const data = await res.json();
       if (res.ok) {
-        setActionResult({ type: "success", message: `${action} successful` });
+        setActionResult({ type: "success", message: `${action} ${t("detail.actionSuccess")}` });
         if (action === "remove") {
           setTimeout(() => handleClose(), 1000);
         }
       } else {
         clearProcessing(service.uid);
-        setActionResult({ type: "error", message: data.error || `Failed to ${action}` });
+        setActionResult({ type: "error", message: data.error || `${t("detail.actionFailed")} ${action}` });
       }
     } catch {
       clearProcessing(service.uid);
-      setActionResult({ type: "error", message: `Failed to ${action}` });
+      setActionResult({ type: "error", message: `${t("detail.actionFailed")} ${action}` });
     } finally {
       setActionLoading(null);
       setTimeout(() => setActionResult(null), 3000);
@@ -334,7 +343,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
           {isProcessing ? (
             <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-yellow-400">
               <Loader2 size={12} className="animate-spin" />
-              Processing...
+              {t("detail.processing")}
             </div>
           ) : (
             <>
@@ -343,10 +352,10 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                   onClick={() => setConfirmAction("rebuild")}
                   disabled={!!actionLoading}
                   className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-cyan-400 hover:bg-cyan-400/10 transition-colors disabled:opacity-40"
-                  title="Rebuild"
+                  title={t("actions.rebuild")}
                 >
                   {actionLoading === "rebuild" ? <Loader2 size={12} className="animate-spin" /> : <Hammer size={12} />}
-                  Rebuild
+                  {t("actions.rebuild")}
                 </button>
               )}
               {service.state === "running" ? (
@@ -355,19 +364,19 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                     onClick={() => setConfirmAction("restart")}
                     disabled={!!actionLoading}
                     className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-yellow-400 hover:bg-yellow-400/10 transition-colors disabled:opacity-40"
-                    title="Restart"
+                    title={t("actions.restart")}
                   >
                     {actionLoading === "restart" ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
-                    Restart
+                    {t("actions.restart")}
                   </button>
                   <button
                     onClick={() => setConfirmAction("stop")}
                     disabled={!!actionLoading}
                     className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-red-400 hover:bg-red-400/10 transition-colors disabled:opacity-40"
-                    title="Stop"
+                    title={t("actions.stop")}
                   >
                     {actionLoading === "stop" ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
-                    Stop
+                    {t("actions.stop")}
                   </button>
                 </>
               ) : (
@@ -376,10 +385,10 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                     onClick={() => setConfirmAction("remove")}
                     disabled={!!actionLoading}
                     className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-red-400 hover:bg-red-400/10 transition-colors disabled:opacity-40"
-                    title="Remove"
+                    title={t("actions.remove")}
                   >
                     {actionLoading === "remove" ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                    Remove
+                    {t("actions.remove")}
                   </button>
                   <button
                     onClick={() => executeAction("start")}
@@ -387,10 +396,10 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                     className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors disabled:opacity-40 ${
                       isCrashed ? "text-orange-400 hover:bg-orange-400/10" : "text-emerald-400 hover:bg-emerald-400/10"
                     }`}
-                    title={isCrashed ? "Retry start" : "Start"}
+                    title={isCrashed ? t("actions.retry") : t("actions.start")}
                   >
                     {actionLoading === "start" ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-                    {isCrashed ? "Retry" : "Start"}
+                    {isCrashed ? t("actions.retry") : t("actions.start")}
                   </button>
                 </>
               )}
@@ -401,7 +410,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
           <button
             onClick={handleClose}
             className="p-1.5 rounded hover:bg-slate-700/60 text-slate-400 hover:text-slate-200 transition-colors"
-            title="Close"
+            title={t("detail.close")}
           >
             <X size={14} />
           </button>
@@ -417,10 +426,10 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
             "text-yellow-400"
           }`} />
           <span className="text-xs text-slate-300 flex-1">
-            {confirmAction === "stop" ? "Stop this container? This will interrupt the service." :
-             confirmAction === "restart" ? "Restart this container? This will briefly interrupt the service." :
-             confirmAction === "remove" ? "Remove this container? This will stop and delete it." :
-             "Rebuild this container? This will rebuild the image and recreate the container."}
+            {confirmAction === "stop" ? t("detail.confirmStop") :
+             confirmAction === "restart" ? t("detail.confirmRestart") :
+             confirmAction === "remove" ? t("detail.confirmRemove") :
+             t("detail.confirmRebuild")}
           </span>
           <button
             onClick={() => executeAction(confirmAction)}
@@ -430,13 +439,13 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
               "bg-yellow-700 hover:bg-yellow-600"
             }`}
           >
-            {confirmAction === "stop" ? "Stop" : confirmAction === "restart" ? "Restart" : confirmAction === "remove" ? "Remove" : "Rebuild"}
+            {confirmAction === "stop" ? t("actions.stop") : confirmAction === "restart" ? t("actions.restart") : confirmAction === "remove" ? t("actions.remove") : t("actions.rebuild")}
           </button>
           <button
             onClick={() => setConfirmAction(null)}
             className="px-3 py-1 rounded text-[11px] font-medium text-slate-400 hover:text-slate-200 bg-slate-700 hover:bg-slate-600 transition-colors"
           >
-            Cancel
+            {t("detail.cancel")}
           </button>
         </div>
       )}
@@ -455,7 +464,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
               }`}
             >
               <Icon size={12} />
-              {tab.label}
+              {t(TAB_KEYS[tab.id])}
               <span className={`absolute bottom-0 left-0 right-0 h-px bg-cyan-400 transition-transform duration-300 ease-out origin-center ${isActive ? "scale-x-100" : "scale-x-0"}`} />
             </button>
           );
@@ -474,34 +483,34 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                 <div className="flex items-start gap-2.5 bg-orange-500/10 border border-orange-500/30 rounded-lg px-3 py-2.5">
                   <AlertTriangle size={16} className="text-orange-400 shrink-0 mt-0.5" />
                   <div className="text-xs space-y-1">
-                    <div className="font-semibold text-orange-300">Container crashed</div>
+                    <div className="font-semibold text-orange-300">{t("detail.containerCrashed")}</div>
                     <div className="text-slate-400">
-                      Exit code: <span className="text-orange-300 font-mono">{service.exit_code}</span>
-                      {service.oom_killed && <span className="ml-2 text-red-400 font-semibold">OOM Killed</span>}
-                      {service.restart_count > 0 && <span className="ml-2">Restarted <span className="text-orange-300 font-mono">{service.restart_count}</span> times</span>}
+                      {t("detail.exitCode")}: <span className="text-orange-300 font-mono">{service.exit_code}</span>
+                      {service.oom_killed && <span className="ml-2 text-red-400 font-semibold">{t("detail.oomKilled")}</span>}
+                      {service.restart_count > 0 && <span className="ml-2">{t("detail.restarted")} <span className="text-orange-300 font-mono">{service.restart_count}</span> {t("detail.times")}</span>}
                     </div>
-                    <div className="text-slate-500">Check the logs below for details</div>
+                    <div className="text-slate-500">{t("detail.checkLogs")}</div>
                   </div>
                 </div>
               )}
               {service.status && (
-                <DetailRow label="Status" value={service.status} />
+                <DetailRow label={t("detail.status")} value={service.status} />
               )}
-              <DetailRow label="Image" value={service.image} mono />
-              <DetailRow label="Container" value={service.id.slice(0, 12)} mono />
-              <DetailRow label="Project" value={service.project} />
+              <DetailRow label={t("detail.image")} value={service.image} mono />
+              <DetailRow label={t("detail.container")} value={service.id.slice(0, 12)} mono />
+              <DetailRow label={t("detail.project")} value={service.project} />
               {service.compose_file && (
-                <DetailRow label="Compose" value={service.compose_file} mono />
+                <DetailRow label={t("detail.compose")} value={service.compose_file} mono />
               )}
 
               {service.compose_file && (
                 <div>
                   <span className="text-[11px] uppercase tracking-wider text-slate-500 mb-0.5 flex items-center gap-1">
-                    Env File
+                    {t("detail.envFile")}
                     <span className="relative group/tip">
                       <HelpCircle size={11} className="text-slate-600 hover:text-slate-400 cursor-help transition-colors" />
                       <span className="absolute left-full top-1/2 -translate-y-1/2 ml-1.5 px-2.5 py-1.5 bg-slate-700 text-slate-200 text-[11px] normal-case tracking-normal rounded-md shadow-lg whitespace-nowrap opacity-0 pointer-events-none group-hover/tip:opacity-100 transition-opacity z-10">
-                        Only files starting with .env are detected
+                        {t("detail.envFileTip")}
                       </span>
                     </span>
                   </span>
@@ -512,7 +521,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                         onChange={(e) => setEnvFileSelected(e.target.value)}
                         className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm font-mono text-slate-200 focus:outline-none focus:border-cyan-500"
                       >
-                        <option value="">Auto (detect)</option>
+                        <option value="">{t("detail.envFileAutoDetect")}</option>
                         {envFileOptions.map((f) => (
                           <option key={f} value={f}>{f}</option>
                         ))}
@@ -538,7 +547,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                   ) : (
                     <div className="flex items-center gap-1.5">
                       <span className={`text-sm break-all ${envFiles[service.compose_file!] ? "font-mono text-slate-200" : "text-slate-500 italic"}`}>
-                        {envFiles[service.compose_file!] || "Auto"}
+                        {envFiles[service.compose_file!] || t("detail.envFileAuto")}
                       </span>
                       <button
                         onClick={() => {
@@ -563,7 +572,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
 
               {service.ports.length > 0 && (
                 <div>
-                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">Ports</span>
+                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">{t("detail.ports")}</span>
                   <div className="flex flex-wrap gap-1.5">
                     {service.ports.map((p, i) => (
                       <a
@@ -585,7 +594,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
 
               {service.networks.length > 0 && (
                 <div>
-                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">Networks</span>
+                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">{t("detail.networks")}</span>
                   <div className="flex flex-wrap gap-1.5">
                     {service.networks.map((n, i) => (
                       <span key={i} className="inline-flex items-center gap-1.5 text-sm font-mono bg-slate-800/80 text-purple-300 px-2.5 py-1 rounded">
@@ -603,7 +612,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
               {/* Connected services */}
               {connectedSvcs.length > 0 && (
                   <div>
-                    <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">Connected to</span>
+                    <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">{t("detail.connectedTo")}</span>
                     <div className="flex flex-wrap gap-1.5">
                       {connectedSvcs.map((s) => {
                         const dotColor = s.state === "running" ? "bg-emerald-400" : s.state === "exited" || s.state === "dead" ? "bg-red-400" : "bg-yellow-400";
@@ -625,27 +634,27 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
             {/* Restart policy */}
             {service.restart_policy && (
-              <DetailRow label="Restart Policy" value={service.restart_policy} />
+              <DetailRow label={t("detail.restartPolicy")} value={service.restart_policy} />
             )}
 
             {/* Resource limits */}
             <div>
-              <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">Resource Limits</span>
+              <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">{t("detail.resourceLimits")}</span>
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-slate-800/80 rounded px-3 py-2">
-                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block">Memory Limit</span>
+                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block">{t("detail.memoryLimit")}</span>
                   <span className="text-xs font-mono text-slate-200">
                     {service.memory_limit > 0
                       ? `${(service.memory_limit / 1024 / 1024).toFixed(0)} MB`
-                      : "Unlimited"}
+                      : t("detail.unlimited")}
                   </span>
                 </div>
                 <div className="bg-slate-800/80 rounded px-3 py-2">
-                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block">CPU Quota</span>
+                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block">{t("detail.cpuQuota")}</span>
                   <span className="text-xs font-mono text-slate-200">
                     {service.cpu_quota > 0
                       ? `${(service.cpu_quota / 1000).toFixed(0)}%`
-                      : "Unlimited"}
+                      : t("detail.unlimited")}
                   </span>
                 </div>
               </div>
@@ -653,7 +662,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
 
             {/* Health check */}
             <div>
-              <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">Health Check</span>
+              <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">{t("detail.healthCheck")}</span>
               {service.health_status ? (
                 <div className="space-y-2">
                   <span className={`inline-flex items-center gap-1.5 text-xs font-mono px-2 py-0.5 rounded ${
@@ -670,7 +679,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                   </span>
                   {service.health_log.length > 0 && (
                     <div className="bg-slate-800/60 rounded p-2 space-y-0.5">
-                      <span className="text-[10px] text-slate-500 block mb-1">Recent checks</span>
+                      <span className="text-[10px] text-slate-500 block mb-1">{t("detail.recentChecks")}</span>
                       {service.health_log.map((entry, i) => (
                         <div key={i} className="text-[11px] font-mono text-slate-400 break-all">{entry}</div>
                       ))}
@@ -678,7 +687,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                   )}
                 </div>
               ) : (
-                <span className="text-xs text-slate-500">Not configured</span>
+                <span className="text-xs text-slate-500">{t("detail.healthNotConfigured")}</span>
               )}
             </div>
           </div>
@@ -693,7 +702,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
           return (
           <div className="flex-1 overflow-y-auto px-4 py-3">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] uppercase tracking-wider text-slate-500">{filteredEnv.length} variables</span>
+              <span className="text-[11px] uppercase tracking-wider text-slate-500">{filteredEnv.length} {t("detail.variables")}</span>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => {
@@ -716,14 +725,14 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                   className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
                 >
                   {copiedEnvIdx === -1 ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-                  {copiedEnvIdx === -1 ? "Copied!" : "Copy all"}
+                  {copiedEnvIdx === -1 ? t("detail.copied") : t("detail.copyAll")}
                 </button>
                 <button
                   onClick={() => { setEnvVisibleAll((v) => !v); setEnvVisibleSet(new Set()); }}
                   className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
                 >
                   {envVisibleAll ? <EyeOff size={11} /> : <Eye size={11} />}
-                  {envVisibleAll ? "Hide all" : "Show all"}
+                  {envVisibleAll ? t("detail.hideAll") : t("detail.showAll")}
                 </button>
               </div>
             </div>
@@ -786,7 +795,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                 })}
               </div>
             ) : (
-              <div className="text-slate-500 text-sm text-center py-8">No environment variables available</div>
+              <div className="text-slate-500 text-sm text-center py-8">{t("detail.noEnvVars")}</div>
             )}
           </div>
           );
@@ -798,14 +807,14 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
             {stats ? (
               <>
                 <div className="grid grid-cols-2 gap-3">
-                  <StatCard label="CPU" value={`${stats.cpu.toFixed(1)}%`} color={stats.cpu > 80 ? "text-red-400" : stats.cpu > 50 ? "text-yellow-400" : "text-emerald-400"} />
-                  <StatCard label="Memory" value={`${stats.mem_mb.toFixed(0)} MB`} extra={`${stats.mem_percent.toFixed(1)}%`} color={stats.mem_percent > 80 ? "text-red-400" : stats.mem_percent > 50 ? "text-yellow-400" : "text-emerald-400"} />
+                  <StatCard label={t("node.cpu")} value={`${stats.cpu.toFixed(1)}%`} color={stats.cpu > 80 ? "text-red-400" : stats.cpu > 50 ? "text-yellow-400" : "text-emerald-400"} />
+                  <StatCard label={t("detail.memory")} value={`${stats.mem_mb.toFixed(0)} MB`} extra={`${stats.mem_percent.toFixed(1)}%`} color={stats.mem_percent > 80 ? "text-red-400" : stats.mem_percent > 50 ? "text-yellow-400" : "text-emerald-400"} />
                 </div>
 
                 {/* CPU bar */}
                 <div>
                   <div className="flex justify-between text-xs text-slate-500 mb-1">
-                    <span>CPU Usage</span>
+                    <span>{t("detail.cpuUsage")}</span>
                     <span>{stats.cpu.toFixed(1)}%</span>
                   </div>
                   <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -819,7 +828,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                 {/* Memory bar */}
                 <div>
                   <div className="flex justify-between text-xs text-slate-500 mb-1">
-                    <span>Memory Usage</span>
+                    <span>{t("detail.memoryUsage")}</span>
                     <span>{stats.mem_mb.toFixed(0)} MB ({stats.mem_percent.toFixed(1)}%)</span>
                   </div>
                   <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -831,7 +840,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                 </div>
               </>
             ) : (
-              <div className="text-slate-500 text-sm text-center py-8">No stats available</div>
+              <div className="text-slate-500 text-sm text-center py-8">{t("detail.noStats")}</div>
             )}
           </div>
         )}
@@ -864,14 +873,14 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                 title={logsExpanded ? "Collapse logs" : "Expand logs"}
               >
                 {logsExpanded ? <ChevronDown size={10} /> : <ChevronUp size={10} />}
-                {logsExpanded ? "Collapse" : "Expand"}
+                {logsExpanded ? t("detail.collapse") : t("detail.expand")}
               </button>
             </div>
           </div>
           <div className="flex items-center justify-between px-4 py-2 shrink-0">
             <div className="flex items-center gap-2">
               <Terminal size={14} className="text-cyan-400" />
-              <span className="text-sm font-medium text-slate-300">Logs</span>
+              <span className="text-sm font-medium text-slate-300">{t("detail.logs")}</span>
               {service.state === "running" && subscribedRef.current && (
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
               )}
@@ -884,7 +893,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                   title="Exec command"
                 >
                   <Terminal size={12} />
-                  Exec
+                  {t("detail.exec")}
                 </button>
               )}
               <button
@@ -923,7 +932,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                       runExec();
                     }
                   }}
-                  placeholder="e.g. python manage.py migrate"
+                  placeholder={t("detail.execPlaceholder")}
                   className="flex-1 bg-slate-900 border border-slate-600 rounded px-2.5 py-1.5 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-purple-500"
                   autoFocus
                 />
@@ -932,7 +941,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                   disabled={!execCmd.trim() || execLoading}
                   className="px-3 py-1.5 rounded text-[11px] font-medium text-white bg-purple-700 hover:bg-purple-600 transition-colors disabled:opacity-40"
                 >
-                  {execLoading ? <Loader2 size={12} className="animate-spin" /> : "Run"}
+                  {execLoading ? <Loader2 size={12} className="animate-spin" /> : t("detail.run")}
                 </button>
                 <button
                   onClick={() => { setExecOpen(false); setExecResult(null); setExecError(null); }}
@@ -949,10 +958,10 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 text-[11px]">
                     <span className={execResult.exitCode === 0 ? "text-emerald-400" : "text-red-400"}>
-                      Exit code: {execResult.exitCode}
+                      {t("detail.exitCodeLabel")}: {execResult.exitCode}
                     </span>
                   </div>
-                  <pre className="bg-slate-900 rounded px-2.5 py-2 text-xs font-mono text-slate-300 max-h-48 overflow-auto whitespace-pre-wrap break-all">{execResult.output || "(no output)"}</pre>
+                  <pre className="bg-slate-900 rounded px-2.5 py-2 text-xs font-mono text-slate-300 max-h-48 overflow-auto whitespace-pre-wrap break-all">{execResult.output || t("detail.noOutput")}</pre>
                 </div>
               )}
             </div>
@@ -963,10 +972,10 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
             className="flex-1 overflow-y-auto overflow-x-hidden font-mono text-xs leading-5 px-3 py-2"
           >
             {loading && (
-              <div className="text-slate-500 py-4 text-center">Loading logs...</div>
+              <div className="text-slate-500 py-4 text-center">{t("detail.loadingLogs")}</div>
             )}
             {!loading && allLines.length === 0 && (
-              <div className="text-slate-500 py-4 text-center">No logs available</div>
+              <div className="text-slate-500 py-4 text-center">{t("detail.noLogs")}</div>
             )}
             {allLines.map((l, i) => (
               <div key={i} className="flex gap-0 hover:bg-slate-800/40">
@@ -1034,7 +1043,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
           >
             {allLines.length > 500 && (
               <div className="text-slate-600 text-center py-2 text-[11px]">
-                {allLines.length - 500} lines hidden
+                {allLines.length - 500} {t("detail.linesHidden")}
               </div>
             )}
             {(allLines.length > 500 ? allLines.slice(-500) : allLines).map((l, i) => (

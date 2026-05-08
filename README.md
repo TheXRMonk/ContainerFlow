@@ -49,7 +49,15 @@ bun run dev
 
 Abre `http://localhost:9420` (Vite dev con hot reload, proxea API al backend en puerto 9470).
 
-### Produccion
+### Produccion (Docker)
+
+```bash
+docker compose up -d
+```
+
+Abre `http://localhost:9470`.
+
+### Produccion (manual)
 
 ```bash
 bun run build

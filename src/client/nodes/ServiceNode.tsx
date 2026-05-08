@@ -1,6 +1,7 @@
 import { memo, useState, useEffect } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useNodeStats } from "../hooks/useStatsStore";
+import { useT } from "../i18n";
 import {
   Database,
   Zap,
@@ -113,6 +114,7 @@ function ProcessingTimer({ startedAt }: { startedAt: number }) {
 }
 
 export const ServiceNode = memo(function ServiceNode({ data, id }: NodeProps) {
+  const { t } = useT();
   const d = data as unknown as ServiceNodeData;
   const nodeStats = useNodeStats(id);
   const s = stateStyles[d.state] || stateStyles.exited;
@@ -184,7 +186,7 @@ export const ServiceNode = memo(function ServiceNode({ data, id }: NodeProps) {
             )}
           </div>
           <div className="text-xs text-slate-500 truncate mt-0.5">
-            {d.image.startsWith("sha256:") ? `Sin Tag (${d.image.slice(7, 19)})` : d.image}
+            {d.image.startsWith("sha256:") ? `${t("node.noTag")} (${d.image.slice(7, 19)})` : d.image}
           </div>
         </div>
       </div>
@@ -207,8 +209,8 @@ export const ServiceNode = memo(function ServiceNode({ data, id }: NodeProps) {
       {nodeStats && (
         <div className="mt-2 space-y-1.5">
           <div className="flex justify-between text-[11px] text-slate-400">
-            <span>CPU {nodeStats.cpu.toFixed(1)}%</span>
-            <span>MEM {nodeStats.mem_mb.toFixed(0)}MB</span>
+            <span>{t("node.cpu")} {nodeStats.cpu.toFixed(1)}%</span>
+            <span>{t("node.mem")} {nodeStats.mem_mb.toFixed(0)}MB</span>
           </div>
           <div className="flex gap-1.5">
             <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">

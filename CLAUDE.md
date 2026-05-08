@@ -30,3 +30,11 @@
 
 - `bun run dev` — desarrollo (servidor + cliente)
 - `bun run build` — build de produccion
+
+## i18n (Internacionalizacion)
+
+- Todo texto visible en la UI debe usar el sistema de traducciones (`useT()` hook de `src/client/i18n.tsx`)
+- Al agregar texto nuevo, agregar la key en ambos diccionarios (en + es) en `i18n.tsx`
+- Keys usan formato `seccion.descripcion` (ej. `"settings.save"`, `"actions.restart"`)
+- Nunca hardcodear strings de UI directamente en JSX
+- El idioma se persiste en `localStorage("df:lang")`, default `"en"`

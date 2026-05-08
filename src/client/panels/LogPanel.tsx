@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { X, Pause, Play, Terminal } from "lucide-react";
 import type { Service, LogLine, WSMessage } from "../../shared/types";
+import { useT } from "../i18n";
 
 interface LogPanelProps {
   service: Service;
@@ -12,6 +13,7 @@ interface LogPanelProps {
 }
 
 export function LogPanel({ service, logLines, token, onClose, sendMessage, clearLogLines }: LogPanelProps) {
+  const { t } = useT();
   const [initialLogs, setInitialLogs] = useState<LogLine[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -80,7 +82,7 @@ export function LogPanel({ service, logLines, token, onClose, sendMessage, clear
           {service.state === "running" && subscribedRef.current && (
             <span className="flex items-center gap-1.5 text-xs text-cyan-400">
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-              streaming
+              {t("logPanel.streaming")}
             </span>
           )}
         </div>
@@ -109,10 +111,10 @@ export function LogPanel({ service, logLines, token, onClose, sendMessage, clear
         className="flex-1 overflow-y-auto overflow-x-hidden font-mono text-xs leading-5 px-4 py-2"
       >
         {loading && (
-          <div className="text-slate-500 py-4 text-center">Loading logs...</div>
+          <div className="text-slate-500 py-4 text-center">{t("logPanel.loadingLogs")}</div>
         )}
         {!loading && allLines.length === 0 && (
-          <div className="text-slate-500 py-4 text-center">No logs available</div>
+          <div className="text-slate-500 py-4 text-center">{t("logPanel.noLogs")}</div>
         )}
         {allLines.map((l, i) => (
           <div key={i} className="flex gap-0 hover:bg-slate-800/40">
