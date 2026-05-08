@@ -929,12 +929,6 @@ El backend siempre envía el campo `project` en cada servicio. El frontend tiene
 - [ ] Docker events (start/stop/restart) como pulso en nodos
 - [ ] Dark theme, minimap, zoom, pan
 
-### Fase 2 — MCP
-- [ ] MCP server con tools de Docker
-- [ ] start_dashboard, list_services, get_stats, get_logs, restart
-- [ ] inspect_service, get_networks
-- [ ] Resources: docker://services
-- [ ] README con instrucciones de setup
 
 ### Fase 3 — Polish
 - [ ] Click en nodo → panel lateral con logs en vivo
