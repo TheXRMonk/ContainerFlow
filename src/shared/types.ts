@@ -76,6 +76,15 @@ export interface ContainerSettings {
   memThreshold: number | null;
 }
 
+export interface StatsHistoryPoint {
+  timestamp: number;
+  cpu: number;
+  mem_mb: number;
+  mem_percent: number;
+}
+
+export type StatsRange = "1h" | "6h" | "24h" | "7d";
+
 export type WSMessage =
   | { type: "services"; data: Service[] }
   | { type: "connections"; data: Connection[] }

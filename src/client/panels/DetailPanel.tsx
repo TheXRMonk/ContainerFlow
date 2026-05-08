@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, useCallback, useMemo, startTransition } from "react";
-import { X, Pause, Play, Square, RotateCw, Hammer, Trash2, Terminal, Network, Globe, Info as InfoIcon, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check, Loader2, AlertTriangle, Maximize2, ExternalLink, Pencil, HelpCircle } from "lucide-react";
-import type { Service, Stats, LogLine, WSMessage, Connection, DockerEvent, ContainerSettings } from "../../shared/types";
+import { X, Pause, Play, Square, RotateCw, Hammer, Trash2, Terminal, Network, Globe, Info as InfoIcon, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check, Loader2, AlertTriangle, Maximize2, ExternalLink, Pencil, HelpCircle, Save } from "lucide-react";
+import type { Service, Stats, LogLine, WSMessage, Connection, DockerEvent, ContainerSettings, DiscordConfig, StatsRange } from "../../shared/types";
 import { useT } from "../i18n";
+import { useStatsHistory } from "../hooks/useStatsHistory";
+import { StatsCard } from "../components/StatsCard";
+import { ThresholdBar } from "../components/ThresholdBar";
 
 type Tab = "info" | "config" | "env" | "stats";
 
@@ -87,6 +90,10 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
   const [csLoaded, setCsLoaded] = useState(false);
   const [csSaving, setCsSaving] = useState(false);
   const [csSaved, setCsSaved] = useState(false);
+  const [globalThresholds, setGlobalThresholds] = useState<{ cpu: number; mem: number }>({ cpu: 80, mem: 90 });
+  const [discordEnabled, setDiscordEnabled] = useState(false);
+  const [statsRange, setStatsRange] = useState<StatsRange>("1h");
+  const { data: historyData, loading: historyLoading } = useStatsHistory(service.uid, statsRange, token);
 
   useEffect(() => {
     const headers: Record<string, string> = {};
@@ -98,24 +105,40 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
         setCsLoaded(true);
       })
       .catch(() => setCsLoaded(true));
+    fetch("/api/discord-config", { headers })
+      .then((r) => r.ok ? r.json() : null)
+      .then((cfg: DiscordConfig | null) => {
+        if (cfg) {
+          setGlobalThresholds({ cpu: cfg.thresholds.cpuPercent, mem: cfg.thresholds.memPercent });
+          setDiscordEnabled(cfg.enabled && !!cfg.webhookUrl);
+        }
+      })
+      .catch(() => {});
   }, [service.uid, token]);
 
-  const saveContainerSettings = useCallback(async () => {
-    setCsSaving(true);
-    setCsSaved(false);
-    try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      await fetch("/api/container-settings", {
-        method: "PUT",
-        headers,
-        body: JSON.stringify({ uid: service.uid, settings: containerSettings }),
-      });
-      setCsSaved(true);
-      setTimeout(() => setCsSaved(false), 2000);
-    } catch {}
-    setCsSaving(false);
-  }, [service.uid, token, containerSettings]);
+  // Auto-save container settings on change (debounced)
+  const csLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!csLoaded) return;
+    // Skip the first render after loading
+    if (!csLoadedRef.current) { csLoadedRef.current = true; return; }
+    const timer = setTimeout(async () => {
+      setCsSaving(true);
+      try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        await fetch("/api/container-settings", {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({ uid: service.uid, settings: containerSettings }),
+        });
+        setCsSaved(true);
+        setTimeout(() => setCsSaved(false), 1500);
+      } catch {}
+      setCsSaving(false);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [containerSettings, csLoaded, service.uid, token]);
 
   // Scroll modal to bottom when opened or when logs arrive
   useEffect(() => {
@@ -881,68 +904,142 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
             {/* Notifications toggle */}
             {csLoaded && (
               <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-300">{t("detail.notifications")}</span>
+                <span className={`text-xs ${discordEnabled ? "text-slate-300" : "text-slate-500"}`}>{t("detail.notifications")}</span>
                 <button
                   type="button"
-                  onClick={() => setContainerSettings((s) => ({ ...s, notificationsEnabled: !s.notificationsEnabled }))}
-                  className={`relative w-9 h-5 rounded-full transition-colors ${containerSettings.notificationsEnabled ? "bg-cyan-600" : "bg-slate-600"}`}
+                  disabled={!discordEnabled}
+                  onClick={() => { if (discordEnabled) setContainerSettings((s) => ({ ...s, notificationsEnabled: !s.notificationsEnabled })); }}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${!discordEnabled ? "bg-slate-700 opacity-50 cursor-not-allowed" : containerSettings.notificationsEnabled ? "bg-cyan-600" : "bg-slate-600"}`}
                 >
-                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${containerSettings.notificationsEnabled ? "translate-x-4" : "translate-x-0"}`} />
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${discordEnabled && containerSettings.notificationsEnabled ? "translate-x-4" : "translate-x-0"}`} />
                 </button>
               </div>
             )}
 
             {stats ? (
               <>
-                <div className="grid grid-cols-2 gap-3">
-                  <StatCard label={t("node.cpu")} value={`${stats.cpu.toFixed(1)}%`} color={stats.cpu > 80 ? "text-red-400" : stats.cpu > 50 ? "text-yellow-400" : "text-emerald-400"} />
-                  <StatCard label={t("detail.memory")} value={`${stats.mem_mb.toFixed(0)} MB`} extra={`${stats.mem_percent.toFixed(1)}%`} color={stats.mem_percent > 80 ? "text-red-400" : stats.mem_percent > 50 ? "text-yellow-400" : "text-emerald-400"} />
+                <div className="grid grid-cols-2 gap-3 mb-2">
+                  <StatCard
+                    label={t("node.cpu")}
+                    value={`${stats.cpu.toFixed(1)}%`}
+                    color={stats.cpu > (discordEnabled && containerSettings.notificationsEnabled ? (containerSettings.cpuThreshold ?? globalThresholds.cpu) : 80) ? "text-amber-400" : "text-cyan-400"}
+                    limit={service.cpu_quota > 0 ? `${(service.cpu_quota / 1000).toFixed(0)}%` : undefined}
+                    threshold={discordEnabled && containerSettings.notificationsEnabled ? `${containerSettings.cpuThreshold ?? globalThresholds.cpu}%` : undefined}
+                    thresholdLabel={t("detail.threshold")}
+                    limitLabel={t("detail.limit")}
+                    thresholdTooltip={t("detail.thresholdTooltip")}
+                    limitTooltip={t("detail.limitTooltip")}
+                  />
+                  <StatCard
+                    label={t("detail.memory")}
+                    value={`${stats.mem_mb.toFixed(0)} MB`}
+                    extra={`${stats.mem_percent.toFixed(1)}%`}
+                    color={stats.mem_percent > (discordEnabled && containerSettings.notificationsEnabled ? (containerSettings.memThreshold ?? globalThresholds.mem) : 80) ? "text-amber-400" : "text-purple-400"}
+                    limit={service.memory_limit > 0 ? `${(service.memory_limit / 1024 / 1024).toFixed(0)} MB` : undefined}
+                    threshold={discordEnabled && containerSettings.notificationsEnabled ? `${containerSettings.memThreshold ?? globalThresholds.mem}%` : undefined}
+                    thresholdLabel={t("detail.threshold")}
+                    limitLabel={t("detail.limit")}
+                    thresholdTooltip={t("detail.thresholdTooltip")}
+                    limitTooltip={t("detail.limitTooltip")}
+                  />
                 </div>
 
                 {/* CPU bar with draggable threshold */}
                 <ThresholdBar
                   label={t("detail.cpuUsage")}
                   value={stats.cpu}
-                  threshold={containerSettings.cpuThreshold ?? 80}
+                  threshold={containerSettings.cpuThreshold ?? globalThresholds.cpu}
                   isCustom={containerSettings.cpuThreshold !== null}
-                  showThreshold={containerSettings.notificationsEnabled}
+                  showThreshold={discordEnabled && containerSettings.notificationsEnabled}
                   thresholdLabel={t("detail.cpuThreshold")}
                   tagLabel={containerSettings.cpuThreshold !== null ? t("detail.custom") : t("detail.global")}
                   hintLabel={t("detail.thresholdHint")}
                   onThresholdChange={(v) => setContainerSettings((s) => ({ ...s, cpuThreshold: v }))}
                   onReset={() => setContainerSettings((s) => ({ ...s, cpuThreshold: null }))}
                   formatValue={(v) => `${v.toFixed(1)}%`}
+                  baseColor="cyan"
                 />
 
-                {/* Memory bar with draggable threshold */}
+                {/* Memory bar with draggable threshold — extra top margin for drag handle clearance */}
+                <div className="mt-2" />
                 <ThresholdBar
                   label={t("detail.memoryUsage")}
                   value={stats.mem_percent}
-                  threshold={containerSettings.memThreshold ?? 90}
+                  threshold={containerSettings.memThreshold ?? globalThresholds.mem}
                   isCustom={containerSettings.memThreshold !== null}
-                  showThreshold={containerSettings.notificationsEnabled}
+                  showThreshold={discordEnabled && containerSettings.notificationsEnabled}
                   thresholdLabel={t("detail.memThreshold")}
                   tagLabel={containerSettings.memThreshold !== null ? t("detail.custom") : t("detail.global")}
                   hintLabel={t("detail.thresholdHint")}
                   onThresholdChange={(v) => setContainerSettings((s) => ({ ...s, memThreshold: v }))}
                   onReset={() => setContainerSettings((s) => ({ ...s, memThreshold: null }))}
                   formatValue={() => `${stats.mem_mb.toFixed(0)} MB (${stats.mem_percent.toFixed(1)}%)`}
+                  formatThreshold={service.memory_limit > 0 ? (th) => `${((th / 100) * service.memory_limit / 1024 / 1024).toFixed(0)} MB` : undefined}
+                  baseColor="purple"
                 />
               </>
             ) : (
               <div className="text-slate-500 text-sm text-center py-8">{t("detail.noStats")}</div>
             )}
 
-            {/* Save button */}
-            {csLoaded && (
-              <button
-                onClick={saveContainerSettings}
-                disabled={csSaving}
-                className="w-full px-3 py-1.5 rounded text-xs font-medium text-white bg-cyan-700 hover:bg-cyan-600 transition-colors disabled:opacity-50"
-              >
-                {csSaving ? t("detail.savingSettings") : csSaved ? t("detail.settingsSaved") : t("detail.saveSettings")}
-              </button>
-            )}
+            {/* History sparklines */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-400 font-medium">{t("detail.cpuHistory")}</span>
+                <div className="flex gap-0.5">
+                  {(["1h", "6h", "24h", "7d"] as StatsRange[]).map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setStatsRange(r)}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
+                        statsRange === r
+                          ? "bg-cyan-500/20 text-cyan-300"
+                          : "text-slate-500 hover:text-slate-300 hover:bg-slate-800"
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {historyLoading ? (
+                <div className="text-slate-500 text-[11px] text-center py-4">{t("detail.loadingHistory")}</div>
+              ) : (
+                <div className="space-y-2">
+                  <StatsCard
+                    label="CPU"
+                    value={stats ? `${stats.cpu.toFixed(1)}%` : "—"}
+                    limit={service.cpu_quota > 0 ? `${(service.cpu_quota / 1000).toFixed(0)}%` : undefined}
+                    data={historyData.map((p) => p.cpu)}
+                    timestamps={historyData.map((p) => p.timestamp)}
+                    hoverValues={historyData.map((p) => p.cpu)}
+                    color="#06b6d4"
+                    threshold={discordEnabled && containerSettings.notificationsEnabled ? (containerSettings.cpuThreshold ?? globalThresholds.cpu) : undefined}
+                    sparklineHeight={60}
+                    formatHoverValue={(v) => `${v.toFixed(2)}%`}
+                    showAverage
+                    formatAverage={(v) => `${v.toFixed(2)}%`}
+                    avgLabel={t("detail.avg")}
+                  />
+                  <StatsCard
+                    label="MEM"
+                    value={stats ? `${stats.mem_mb.toFixed(0)} MB` : "—"}
+                    limit={service.memory_limit > 0 ? `${(service.memory_limit / 1024 / 1024).toFixed(0)} MB` : undefined}
+                    data={historyData.map((p) => p.mem_percent)}
+                    timestamps={historyData.map((p) => p.timestamp)}
+                    hoverValues={historyData.map((p) => p.mem_mb)}
+                    color="#a78bfa"
+                    threshold={discordEnabled && containerSettings.notificationsEnabled ? (containerSettings.memThreshold ?? globalThresholds.mem) : undefined}
+                    sparklineHeight={60}
+                    formatHoverValue={(v) => `${v.toFixed(0)} MB`}
+                    showAverage
+                    formatAverage={(v) => `${v.toFixed(0)} MB`}
+                    avgLabel={t("detail.avg")}
+                  />
+                </div>
+              )}
+            </div>
+
           </div>
         )}
 
@@ -1185,124 +1282,58 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
   );
 }
 
-function ThresholdBar({ label, value, threshold, isCustom, showThreshold, thresholdLabel, tagLabel, hintLabel, onThresholdChange, onReset, formatValue }: {
-  label: string;
-  value: number;
-  threshold: number;
-  isCustom: boolean;
-  showThreshold: boolean;
-  thresholdLabel: string;
-  tagLabel: string;
-  hintLabel: string;
-  onThresholdChange: (v: number) => void;
-  onReset: () => void;
-  formatValue: (v: number) => string;
-}) {
-  const barRef = useRef<HTMLDivElement>(null);
-  const [dragging, setDragging] = useState(false);
-  const [hovering, setHovering] = useState(false);
 
-  const calcPercent = useCallback((clientX: number) => {
-    if (!barRef.current) return threshold;
-    const rect = barRef.current.getBoundingClientRect();
-    const pct = Math.round(((clientX - rect.left) / rect.width) * 100);
-    return Math.max(5, Math.min(100, pct));
-  }, [threshold]);
-
-  useEffect(() => {
-    if (!dragging) return;
-    const onMove = (e: MouseEvent) => { onThresholdChange(calcPercent(e.clientX)); };
-    const onUp = () => { setDragging(false); };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [dragging, calcPercent, onThresholdChange]);
-
-  // Touch support
-  useEffect(() => {
-    if (!dragging) return;
-    const onMove = (e: TouchEvent) => { if (e.touches[0]) onThresholdChange(calcPercent(e.touches[0].clientX)); };
-    const onEnd = () => { setDragging(false); };
-    window.addEventListener("touchmove", onMove);
-    window.addEventListener("touchend", onEnd);
-    return () => { window.removeEventListener("touchmove", onMove); window.removeEventListener("touchend", onEnd); };
-  }, [dragging, calcPercent, onThresholdChange]);
-
-  const barColor = showThreshold
-    ? (value > threshold ? "bg-red-500" : value > 50 ? "bg-yellow-500" : "bg-emerald-500")
-    : (value > 80 ? "bg-red-500" : value > 50 ? "bg-yellow-500" : "bg-emerald-500");
-  const showTooltip = dragging || hovering;
-
+function Tooltip({ text }: { text: string }) {
+  const [show, setShow] = useState(false);
   return (
-    <div>
-      <div className="flex justify-between text-xs text-slate-500 mb-1">
-        <span>{label}</span>
-        <span>{formatValue(value)}</span>
-      </div>
-      <div
-        ref={barRef}
-        className={`relative ${showThreshold ? "h-3" : "h-2"} bg-slate-800 rounded-full group ${showThreshold ? "cursor-pointer" : ""}`}
-        onClick={(e) => { if (showThreshold && !dragging) onThresholdChange(calcPercent(e.clientX)); }}
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        onClick={() => setShow((v) => !v)}
+        className="text-slate-500 hover:text-slate-300 transition-colors"
       >
-        {/* Usage fill */}
-        <div
-          className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ${barColor}`}
-          style={{ width: `${Math.min(value, 100)}%` }}
-        />
-        {/* Threshold handle — only when notifications enabled */}
-        {showThreshold && (
-          <div
-            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 select-none touch-none"
-            style={{ left: `${threshold}%` }}
-            onMouseDown={(e) => { e.preventDefault(); setDragging(true); }}
-            onTouchStart={(e) => { e.preventDefault(); setDragging(true); }}
-            onMouseEnter={() => setHovering(true)}
-            onMouseLeave={() => setHovering(false)}
-          >
-            {/* Vertical line */}
-            <div className={`w-0.5 h-5 rounded-full transition-colors ${dragging ? "bg-amber-300" : "bg-amber-400/80 group-hover:bg-amber-400"}`} />
-            {/* Drag handle diamond */}
-            <div className={`absolute -top-1 left-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45 rounded-[1px] border transition-colors cursor-grab active:cursor-grabbing ${
-              dragging ? "bg-amber-300 border-amber-200" : "bg-amber-400/90 border-amber-500/50 group-hover:bg-amber-400"
-            }`} />
-            {/* Tooltip */}
-            {showTooltip && (
-              <div className="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-slate-700 rounded text-[10px] font-mono text-amber-300 whitespace-nowrap shadow-lg">
-                {threshold}%
+        <HelpCircle size={10} />
+      </button>
+      {show && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-xs text-slate-200 w-48 text-left shadow-xl z-50 leading-relaxed">
+          {text}
+          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-slate-700" />
+        </div>
+      )}
+    </span>
+  );
+}
+
+function StatCard({ label, value, extra, color, limit, threshold, thresholdLabel, limitLabel, thresholdTooltip, limitTooltip }: { label: string; value: string; extra?: string; color: string; limit?: string; threshold?: string; thresholdLabel?: string; limitLabel?: string; thresholdTooltip?: string; limitTooltip?: string }) {
+  return (
+    <div className="bg-slate-800/80 rounded-lg px-4 py-3">
+      <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">{label}</span>
+      <div className="flex items-center justify-between">
+        <div>
+          <span className={`text-xl font-mono font-semibold ${color}`}>{value}</span>
+          {extra && <span className="text-xs text-slate-500 ml-2">{extra}</span>}
+        </div>
+        {(threshold || limit) && (
+          <div className="flex flex-col items-end gap-0.5">
+            {threshold && (
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-slate-500">{thresholdLabel}:</span>
+                <span className="text-[10px] text-slate-400 font-mono">{threshold}</span>
+                {thresholdTooltip && <Tooltip text={thresholdTooltip} />}
+              </div>
+            )}
+            {limit && (
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-slate-500">{limitLabel}:</span>
+                <span className="text-[10px] text-slate-400 font-mono">{limit}</span>
+                {limitTooltip && <Tooltip text={limitTooltip} />}
               </div>
             )}
           </div>
         )}
       </div>
-      {/* Label row — only when notifications enabled */}
-      {showThreshold && (
-        <div className="flex items-center justify-between mt-1">
-          <span className="text-[10px] text-slate-600">{hintLabel}</span>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-amber-400/70 font-mono">{threshold}%</span>
-            {isCustom && (
-              <button
-                onClick={onReset}
-                className="text-[9px] text-slate-500 hover:text-slate-300 transition-colors"
-                title="Reset to global"
-              >
-                reset
-              </button>
-            )}
-            <span className="text-[9px] text-slate-600">{tagLabel}</span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StatCard({ label, value, extra, color }: { label: string; value: string; extra?: string; color: string }) {
-  return (
-    <div className="bg-slate-800/80 rounded-lg px-4 py-3">
-      <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">{label}</span>
-      <span className={`text-xl font-mono font-semibold ${color}`}>{value}</span>
-      {extra && <span className="text-xs text-slate-500 ml-2">{extra}</span>}
     </div>
   );
 }

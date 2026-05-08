@@ -3,3 +3,6 @@ dist/
 *.log
 .env
 .dockerflow-*.json
+.dockerflow-*.db
+.dockerflow-*.db-wal
+.dockerflow-*.db-shm

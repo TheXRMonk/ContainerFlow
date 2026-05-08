@@ -86,7 +86,30 @@ function Dashboard({ token }: { token: string }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const initialLayoutDone = useRef(false);
-  const [activePage, setActivePage] = useState<Page>("dashboard");
+  const PAGE_PATHS: Record<string, Page> = {
+    "monitoreo": "monitoring", "monitoring": "monitoring",
+    "configuracion": "settings", "settings": "settings",
+  };
+  const PAGE_SLUGS: Record<Page, string> = { dashboard: "", monitoring: "monitoreo", settings: "configuracion" };
+
+  const getPageFromPath = (): Page => {
+    const path = window.location.pathname.replace(/^\//, "");
+    return PAGE_PATHS[path] || "dashboard";
+  };
+  const [activePage, setActivePage] = useState<Page>(getPageFromPath);
+
+  // Sync URL with active page (browser back/forward)
+  useEffect(() => {
+    const handler = () => setActivePage(getPageFromPath());
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, []);
+
+  const navigateTo = useCallback((page: Page) => {
+    const slug = PAGE_SLUGS[page];
+    window.history.pushState(null, "", slug ? `/${slug}` : "/");
+    setActivePage(page);
+  }, []);
   const [hiddenProjects, setHiddenProjects] = useState<Set<string>>(loadFilter);
   const [filterOpen, setFilterOpen] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
@@ -482,11 +505,11 @@ function Dashboard({ token }: { token: string }) {
         token={token}
         totalStats={totalStats}
         activePage={activePage}
-        onPageChange={(page) => { setContextMenu(null); setActivePage(page); }}
+        onPageChange={(page) => { setContextMenu(null); navigateTo(page); }}
         events={events}
       />
 
-      {activePage === "monitoring" && <MonitoringPage events={events} />}
+      {activePage === "monitoring" && <MonitoringPage events={events} token={token} services={services} />}
       {activePage === "settings" && <SettingsPage projects={projects} servicesCount={services.length} token={token} />}
 
       {/* Canvas — inset (only visible on dashboard) */}

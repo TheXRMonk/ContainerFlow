@@ -8,7 +8,8 @@ import { docker, discoverServices, discoverConnections, getContainerLogs, stream
 import { pollStats, watchDockerEvents } from "./watcher";
 import { loadDiscordConfig, saveDiscordConfig, notifyStateChange, notifyResourceAlert, notifyUIAction, notifyActionError, testWebhook, checkDownServices } from "./discord";
 import { loadContainerSettings, saveContainerSettings } from "./container-settings";
-import type { Service, WSMessage, DiscordConfig, ContainerSettings } from "../shared/types";
+import { initStatsDB, insertStats, getStatsHistory, getAllServicesStatsHistory } from "./stats-db";
+import type { Service, WSMessage, DiscordConfig, ContainerSettings, StatsRange } from "../shared/types";
 
 /** Directory for persistent data files (positions, env overrides) */
 const DATA_DIR = process.env.DATA_DIR || process.cwd();
@@ -471,6 +472,22 @@ app.put("/api/container-settings", async (c) => {
   }
 });
 
+// ── Stats history ──
+const VALID_RANGES = new Set(["1h", "6h", "24h", "7d"]);
+
+app.get("/api/stats/history/:uid{.+}", (c) => {
+  const uid = c.req.param("uid");
+  const range = (c.req.query("range") || "1h") as StatsRange;
+  if (!VALID_RANGES.has(range)) return c.json({ error: "Invalid range" }, 400);
+  return c.json(getStatsHistory(uid, range));
+});
+
+app.get("/api/stats/history", (c) => {
+  const range = (c.req.query("range") || "1h") as StatsRange;
+  if (!VALID_RANGES.has(range)) return c.json({ error: "Invalid range" }, 400);
+  return c.json(getAllServicesStatsHistory(range));
+});
+
 // ── Cache headers for static assets ──
 app.use("/*", async (c, next) => {
   await next();
@@ -560,6 +577,7 @@ async function refreshStats(services: Service[]) {
   try {
     const stats = await pollStats(services);
     broadcast({ type: "stats", data: stats });
+    try { insertStats(stats); } catch {}
     // Check resource thresholds and down services for Discord alerts
     try {
       const discordConfig = loadDiscordConfig();
@@ -626,6 +644,9 @@ let lastServicesHash = "";
 let lastConnectionsHash = "";
 
 setInterval(refreshServices, POLL_INTERVAL_MS);
+
+// ── Init stats DB ──
+initStatsDB();
 
 // ── Start ──
 const server = Bun.serve({

@@ -85,7 +85,7 @@ const nameIconMap: { pattern: string; icon: LucideIcon; color: string }[] = [
   { pattern: "api", icon: Server, color: "#3b82f6" },
 ];
 
-function guessIcon(image: string, name: string): { Icon: LucideIcon; color: string } {
+export function guessIcon(image: string, name: string): { Icon: LucideIcon; color: string } {
   const lowerImage = image.toLowerCase();
   const lowerName = name.toLowerCase();
 

@@ -73,9 +73,13 @@ export function checkDownServices(config: DiscordConfig): void {
   if (!config.enabled || !config.events.containerStateChanges) return;
   const now = Date.now();
   for (const [service, downSince] of downServices) {
+    // Skip services that are still in debounce window (might be restarting)
+    if (pendingDown.has(service)) continue;
+    const downMinutes = Math.floor((now - downSince) / 60_000);
+    // Don't send "Still Down" for less than 1 minute
+    if (downMinutes < 1) continue;
     const cooldownKey = `down:${service}`;
     if (!isOnCooldown(cooldownKey, config.downReminderMinutes)) {
-      const downMinutes = Math.floor((now - downSince) / 60_000);
       setCooldown(cooldownKey);
       queueWebhook(config.webhookUrl, {
         username: "ContainerFlow",
@@ -146,45 +150,101 @@ function sendEmbed(config: DiscordConfig, embed: any, cooldownKey?: string): voi
 
 // ── Notification functions ──
 
-const STATE_COLORS: Record<string, number> = {
-  start: 0x22c55e,       // green
-  stop: 0xef4444,        // red
-  die: 0xef4444,
-  restart: 0xf59e0b,     // orange
-  health_status: 0xf59e0b,
-  create: 0x3b82f6,      // blue
-  destroy: 0xef4444,
-};
+const STATE_DEBOUNCE_MS = 15_000; // Wait 15s before notifying stop/die to detect restarts
 
-const STATE_TITLES: Record<string, string> = {
-  start: "Container Started",
-  stop: "Container Stopped",
-  die: "Container Crashed",
-  restart: "Container Restarted",
-  health_status: "Health Status Changed",
-  create: "Container Created",
-  destroy: "Container Destroyed",
-};
+// Pending stop/die events waiting to be flushed or cancelled
+const pendingDown = new Map<string, { action: string; timer: ReturnType<typeof setTimeout>; config: DiscordConfig }>();
+
+function flushPendingDown(service: string): void {
+  const pending = pendingDown.get(service);
+  if (!pending) return;
+  pendingDown.delete(service);
+  clearTimeout(pending.timer);
+
+  const { action, config } = pending;
+
+  // Now we know it's a real stop/crash (no start followed within the debounce window)
+  downServices.set(service, Date.now());
+  // Set cooldown for down reminders so the first "Still Down" doesn't fire immediately
+  setCooldown(`down:${service}`);
+
+  const cooldownKey = `state:${action}:${service}`;
+  const title = action === "die" ? "Container Crashed" : "Container Stopped";
+  sendEmbed(config, {
+    title,
+    color: 0xef4444,
+    description: `**${service}**\n\nAction: \`${action}\``,
+    footer: { text: "ContainerFlow" },
+  }, cooldownKey);
+}
+
+function cancelPendingDown(service: string): void {
+  const pending = pendingDown.get(service);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingDown.delete(service);
+  }
+}
 
 export function notifyStateChange(service: string, action: string, config: DiscordConfig): void {
   if (!config.events.containerStateChanges) return;
 
-  // Track down services for re-alerting
+  // Ignore create/destroy — they're internal Docker lifecycle noise
+  if (action === "create" || action === "destroy") return;
+
   if (action === "die" || action === "stop") {
-    downServices.set(service, Date.now());
-  } else if (action === "start") {
-    // Service recovered — stop tracking and clear die/stop cooldowns
+    // Don't notify immediately — buffer to detect restart sequences
+    // If there's already a pending event for this service, keep the first one
+    if (pendingDown.has(service)) return;
+    const timer = setTimeout(() => flushPendingDown(service), STATE_DEBOUNCE_MS);
+    pendingDown.set(service, { action, timer, config });
+    return;
+  }
+
+  if (action === "start") {
+    const wasPending = pendingDown.has(service);
+    cancelPendingDown(service);
+
+    // Service recovered — stop tracking and clear cooldowns
     downServices.delete(service);
     clearCooldown(`state:die:${service}`);
     clearCooldown(`state:stop:${service}`);
+
+    if (wasPending) {
+      // stop/die → start within debounce window = restart/redeploy, send single message
+      const cooldownKey = `state:restart:${service}`;
+      sendEmbed(config, {
+        title: "Container Restarted",
+        color: 0xf59e0b,
+        description: `**${service}**\n\nAction: \`redeployed\``,
+        footer: { text: "ContainerFlow" },
+      }, cooldownKey);
+    } else {
+      // Fresh start (no preceding stop/die)
+      const cooldownKey = `state:start:${service}`;
+      sendEmbed(config, {
+        title: "Container Started",
+        color: 0x22c55e,
+        description: `**${service}**\n\nAction: \`start\``,
+        footer: { text: "ContainerFlow" },
+      }, cooldownKey);
+    }
+    return;
   }
 
-  // Cooldown per action per service
+  // Other events (restart, health_status)
+  const titles: Record<string, string> = {
+    restart: "Container Restarted",
+    health_status: "Health Status Changed",
+  };
+  const colors: Record<string, number> = {
+    restart: 0xf59e0b,
+    health_status: 0xf59e0b,
+  };
   const cooldownKey = `state:${action}:${service}`;
-  const title = STATE_TITLES[action] || `Container ${action}`;
   sendEmbed(config, {
-    title,
-    color: STATE_COLORS[action] || 0x94a3b8,
+    title: titles[action] || `Container ${action}`,
+    color: colors[action] || 0x94a3b8,
     description: `**${service}**\n\nAction: \`${action}\``,
     footer: { text: "ContainerFlow" },
   }, cooldownKey);
