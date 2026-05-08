@@ -90,7 +90,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
   const [csLoaded, setCsLoaded] = useState(false);
   const [csSaving, setCsSaving] = useState(false);
   const [csSaved, setCsSaved] = useState(false);
-  const [globalThresholds, setGlobalThresholds] = useState<{ cpu: number; mem: number }>({ cpu: 80, mem: 90 });
+  const [globalThresholds, setGlobalThresholds] = useState<{ cpu: number; mem: number }>({ cpu: 50, mem: 60 });
   const [discordEnabled, setDiscordEnabled] = useState(false);
   const [statsRange, setStatsRange] = useState<StatsRange>("1h");
   const { data: historyData, loading: historyLoading } = useStatsHistory(service.uid, statsRange, token);

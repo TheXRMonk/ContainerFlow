@@ -96,7 +96,7 @@ export function MonitoringPage({ events, token, services }: MonitoringPageProps)
   const serviceRef = useRef<HTMLDivElement>(null);
   const { data: allHistory, loading: historyLoading } = useAllStatsHistory(statsRange, token);
   const [containerSettings, setContainerSettings] = useState<Record<string, ContainerSettings>>({});
-  const [globalThresholds, setGlobalThresholds] = useState<{ cpu: number; mem: number }>({ cpu: 80, mem: 90 });
+  const [globalThresholds, setGlobalThresholds] = useState<{ cpu: number; mem: number }>({ cpu: 50, mem: 60 });
   const [discordEnabled, setDiscordEnabled] = useState(false);
 
   // Load thresholds

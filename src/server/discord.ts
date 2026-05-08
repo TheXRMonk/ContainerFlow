@@ -15,8 +15,8 @@ const DEFAULT_CONFIG: DiscordConfig = {
     actionErrors: true,
   },
   thresholds: {
-    cpuPercent: 80,
-    memPercent: 90,
+    cpuPercent: 50,
+    memPercent: 60,
   },
   cooldownMinutes: 5,
   downReminderMinutes: 5,

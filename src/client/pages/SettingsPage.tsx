@@ -19,8 +19,8 @@ const DEFAULT_CONFIG: DiscordConfig = {
     actionErrors: true,
   },
   thresholds: {
-    cpuPercent: 80,
-    memPercent: 90,
+    cpuPercent: 50,
+    memPercent: 60,
   },
   cooldownMinutes: 5,
   downReminderMinutes: 5,
@@ -261,7 +261,7 @@ export function SettingsPage({ projects, servicesCount, token }: SettingsPagePro
                       </div>
                       <input
                         type="range"
-                        min={50}
+                        min={10}
                         max={100}
                         value={config.thresholds.cpuPercent}
                         onChange={(e) => updateThresholds("cpuPercent", parseInt(e.target.value))}
@@ -275,7 +275,7 @@ export function SettingsPage({ projects, servicesCount, token }: SettingsPagePro
                       </div>
                       <input
                         type="range"
-                        min={50}
+                        min={10}
                         max={100}
                         value={config.thresholds.memPercent}
                         onChange={(e) => updateThresholds("memPercent", parseInt(e.target.value))}

@@ -38,6 +38,7 @@ Variables disponibles:
 |---|---|---|
 | `PORT` | `9470` | Puerto del servidor |
 | `AUTH_TOKEN` | _(vacio)_ | Token de autenticacion. Vacio = sin auth, solo localhost. Con valor = auth activado, acceso remoto |
+| `DATA_DIR` | _(cwd)_ | Directorio para persistencia: SQLite de historial (`.dockerflow-stats.db`), config Discord (`.dockerflow-discord.json`) y overrides por contenedor (`.dockerflow-container-settings.json`) |
 
 ## Uso
 
@@ -93,8 +94,56 @@ bun run start
 - **Leyenda de conexiones** — colores por tipo: Database (azul), Cache (rojo), Broker (naranja), Proxy (verde)
 - **Grupos visuales** — recuadros por proyecto/compose con titulo, archivo compose y conteo de containers
 - **Menu contextual** — click derecho en un nodo para acciones rapidas
-- **Pagina de monitoring** — vista de eventos Docker recientes
-- **Pagina de settings** — configuracion de la aplicacion
+- **Pagina de monitoring** — historial de CPU/RAM por servicio (1h, 6h, 24h, 7d) persistido en SQLite, gráficas con sparkline, expand por contenedor, filtros por proyecto/servicio y feed de eventos Docker
+- **Notificaciones Discord** — webhook configurable que avisa cambios de estado, alertas de recursos, acciones manuales y errores
+- **Umbrales por contenedor** — overrides personalizados de CPU/MEM (con fallback a umbrales globales) y toggle de notificaciones por servicio
+- **Pagina de settings** — configuracion de la aplicacion (auth, Discord, hosts Docker)
+
+## Monitoreo e historial
+
+ContainerFlow guarda un historial de métricas y notifica eventos importantes a Discord.
+
+### Historial de métricas
+
+- **Persistencia** — stats de CPU y memoria se almacenan en SQLite (`.dockerflow-stats.db`) cada vez que se hace polling de Docker (~3s)
+- **Rangos** — `1h`, `6h`, `24h`, `7d` con buckets agregados (30s / 60s / 5min / 30min) para rendimiento
+- **Retención** — auto-limpieza horaria descarta datos con más de 7 días y compacta la base con `VACUUM`
+- **API** —
+  - `GET /api/stats/history?range=1h` — historial de todos los servicios
+  - `GET /api/stats/history/:uid?range=1h` — historial de un servicio específico
+- **UI** — la página de monitoring (`MonitoringPage.tsx`) muestra una tarjeta por servicio con sparkline de CPU y MEM, valor actual, promedio y línea de umbral. Cada tarjeta puede expandirse para ver una gráfica más grande, y se filtra por proyecto y/o servicio (los filtros son acumulativos).
+
+### Notificaciones Discord
+
+Configurables desde **Settings → Discord Notifications**. Requiere un webhook URL que empiece por `https://discord.com/api/webhooks/`.
+
+Eventos soportados (cada uno se puede activar/desactivar):
+
+| Evento | Cuándo dispara |
+|---|---|
+| **Container State Changes** | `start`, `stop`, `die` (crash), `restart`, `health_status`. Los eventos `stop`/`die` se debouncean 15s para detectar reinicios y enviar un solo mensaje "Container Restarted" en lugar de stop+start separados |
+| **Resource Alerts** | CPU o memoria de un contenedor supera el umbral (global o por-container) |
+| **UI Actions** | Acción manual disparada desde el panel: start/stop/restart/rebuild/remove |
+| **Action Errors** | Falló una acción ejecutada desde la UI (incluye el mensaje de error) |
+
+Mecanismos anti-spam:
+
+- **Cooldown global** — minutos mínimos entre alertas del mismo tipo+servicio (default `5 min`, configurable `1-60`)
+- **Down reminder** — si un contenedor sigue caído, reenvía un recordatorio "Container Still Down" cada N minutos (default `5 min`)
+- **Cola con rate limit** — 500ms mínimo entre webhooks; si Discord responde `429`, respeta el `Retry-After` y reintenta
+- **Debounce de stop/die** — buffer de 15s para colapsar restart/redeploy en una sola notificación
+
+Umbrales:
+
+- **Globales** — CPU% y MEM% en Settings (default 50% / 60%)
+- **Por contenedor** — desde la página de monitoring, click en el ícono ⚙️ de un servicio para abrir el panel inline. Permite:
+  - Activar/desactivar notificaciones para ese contenedor
+  - Override del umbral de CPU (drag del slider)
+  - Override del umbral de memoria
+  - Reset al valor global (X)
+  - Los overrides se persisten en `.dockerflow-container-settings.json` y se auto-guardan con debounce de 400ms
+
+Botón **Test** en Settings envía un embed de prueba al webhook para verificar que funciona antes de habilitarlo.
 
 ## Tests
 
@@ -151,9 +200,12 @@ Ver `.github/workflows/ci.yml`.
 ```
 src/
   server/
-    index.ts        — servidor Hono + WebSocket + CLI args
-    docker.ts       — descubrimiento de servicios y conexiones
-    watcher.ts      — polling de stats + stream de eventos Docker
+    index.ts             — servidor Hono + WebSocket + CLI args + REST API
+    docker.ts            — descubrimiento de servicios y conexiones
+    watcher.ts           — polling de stats + stream de eventos Docker
+    stats-db.ts          — SQLite de historial de stats (insert, query por rango, cleanup 7d)
+    discord.ts           — webhooks Discord (state changes, resource alerts, cooldown, debounce, queue)
+    container-settings.ts — overrides por contenedor (umbrales y toggle de notificaciones)
   client/
     App.tsx          — dashboard principal + login screen
     main.tsx         — entry point React
@@ -162,8 +214,10 @@ src/
       ServiceNode.tsx — nodo visual por container
       GroupNode.tsx    — header de grupo (proyecto/compose)
     hooks/
-      useDocker.ts   — hook WebSocket para datos en tiempo real
-      processing.ts  — logica pura de estados processing
+      useDocker.ts        — hook WebSocket para datos en tiempo real
+      useStatsHistory.ts  — fetch del historial de stats por rango (1h/6h/24h/7d)
+      useStatsStore.ts    — store en memoria para stats live
+      processing.ts       — logica pura de estados processing
     engine/
       layout.ts      — layout de grupos + grid + edges
     components/
@@ -172,12 +226,15 @@ src/
       LoginScreen.tsx    — pantalla de autenticacion
       NodeContextMenu.tsx — menu contextual de nodos
       OffsetEdge.tsx     — edge custom con offset para evitar superposicion
+      Sparkline.tsx      — gráfica de línea ligera para historial de stats
+      StatsCard.tsx      — tarjeta de métrica con sparkline, hover, promedio y umbral
+      ThresholdBar.tsx   — slider de umbral por contenedor con override/reset
     panels/
       DetailPanel.tsx — panel lateral con info, stats, env, config y logs
       LogPanel.tsx    — panel de logs por container
     pages/
-      MonitoringPage.tsx — vista de eventos Docker
-      SettingsPage.tsx   — configuracion de la aplicacion
+      MonitoringPage.tsx — historial de CPU/RAM, eventos Docker y umbrales por contenedor
+      SettingsPage.tsx   — configuracion (auth, Discord webhook, eventos, umbrales globales)
   shared/
     types.ts         — tipos compartidos server/client
 ```
