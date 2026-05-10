@@ -1,17 +1,18 @@
 import { useEffect, useRef } from "react";
-import { RotateCw, Square, Play, Trash2, Terminal, ExternalLink, Hammer } from "lucide-react";
+import { RotateCw, Square, Play, Trash2, Terminal, ExternalLink, Hammer, Lock, RefreshCw } from "lucide-react";
 import type { Service } from "../../shared/types";
 import { useT } from "../i18n";
 
 interface NodeContextMenuProps {
   position: { x: number; y: number };
   service: Service;
-  onAction: (action: "start" | "stop" | "restart" | "remove" | "rebuild") => void;
+  locked?: boolean;
+  onAction: (action: "start" | "stop" | "restart" | "remove" | "rebuild" | "recreate") => void;
   onOpenLogs: () => void;
   onClose: () => void;
 }
 
-export function NodeContextMenu({ position, service, onAction, onOpenLogs, onClose }: NodeContextMenuProps) {
+export function NodeContextMenu({ position, service, locked, onAction, onOpenLogs, onClose }: NodeContextMenuProps) {
   const { t } = useT();
   const ref = useRef<HTMLDivElement>(null);
 
@@ -48,21 +49,31 @@ export function NodeContextMenu({ position, service, onAction, onOpenLogs, onClo
       className="fixed z-[10000] bg-slate-800 border border-slate-700 rounded-lg shadow-xl shadow-black/50 py-1.5 min-w-[180px]"
       style={{ left: x, top: y }}
     >
+      {locked && (
+        <>
+          <div className="flex items-center gap-2 px-3.5 py-1.5 text-[11px] text-slate-500 bg-slate-900/40">
+            <Lock size={11} className="text-slate-500" />
+            <span>{t("access.viewOnly")}</span>
+          </div>
+          <div className="border-t border-slate-700/50" />
+        </>
+      )}
       {isRunning ? (
         <>
-          <MenuItem icon={RotateCw} label={t("actions.restart")} color="text-yellow-400" onClick={() => { onAction("restart"); onClose(); }} />
-          <MenuItem icon={Square} label={t("actions.stop")} color="text-red-400" onClick={() => { onAction("stop"); onClose(); }} />
+          <MenuItem icon={RotateCw} label={t("actions.restart")} tooltip={t("actions.restart.tooltip")} color="text-yellow-400" disabled={locked} onClick={() => { onAction("restart"); onClose(); }} />
+          <MenuItem icon={Square} label={t("actions.stop")} tooltip={t("actions.stop.tooltip")} color="text-red-400" disabled={locked} onClick={() => { onAction("stop"); onClose(); }} />
         </>
       ) : (
         <>
-          <MenuItem icon={Play} label={t("actions.start")} color="text-emerald-400" onClick={() => { onAction("start"); onClose(); }} />
-          <MenuItem icon={Trash2} label={t("actions.remove")} color="text-red-400" onClick={() => { onAction("remove"); onClose(); }} />
+          <MenuItem icon={Play} label={t("actions.start")} tooltip={t("actions.start.tooltip")} color="text-emerald-400" disabled={locked} onClick={() => { onAction("start"); onClose(); }} />
+          <MenuItem icon={Trash2} label={t("actions.remove")} tooltip={t("actions.remove.tooltip")} color="text-red-400" disabled={locked} onClick={() => { onAction("remove"); onClose(); }} />
         </>
       )}
       {service.compose_file && (
         <>
           <div className="border-t border-slate-700/50 my-1" />
-          <MenuItem icon={Hammer} label={t("actions.rebuild")} color="text-cyan-400" onClick={() => { onAction("rebuild"); onClose(); }} />
+          <MenuItem icon={RefreshCw} label={t("actions.recreate")} tooltip={t("actions.recreate.tooltip")} color="text-cyan-400" disabled={locked} onClick={() => { onAction("recreate"); onClose(); }} />
+          <MenuItem icon={Hammer} label={t("actions.rebuild")} tooltip={t("actions.rebuild.tooltip")} color="text-cyan-400" disabled={locked} onClick={() => { onAction("rebuild"); onClose(); }} />
         </>
       )}
       <div className="border-t border-slate-700/50 my-1" />
@@ -83,13 +94,15 @@ export function NodeContextMenu({ position, service, onAction, onOpenLogs, onClo
   );
 }
 
-function MenuItem({ icon: Icon, label, color, onClick }: { icon: typeof Play; label: string; color: string; onClick: () => void }) {
+function MenuItem({ icon: Icon, label, color, onClick, disabled, tooltip }: { icon: typeof Play; label: string; color: string; onClick: () => void; disabled?: boolean; tooltip?: string }) {
   return (
     <button
-      onClick={onClick}
-      className="flex items-center gap-2.5 w-full px-3.5 py-2 text-sm text-slate-300 hover:bg-slate-700/60 transition-colors"
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      title={tooltip}
+      className={`flex items-center gap-2.5 w-full px-3.5 py-2 text-sm transition-colors ${disabled ? "text-slate-600 cursor-not-allowed" : "text-slate-300 hover:bg-slate-700/60"}`}
     >
-      <Icon size={14} className={color} />
+      <Icon size={14} className={disabled ? "text-slate-600" : color} />
       <span>{label}</span>
     </button>
   );

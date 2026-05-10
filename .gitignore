@@ -2,6 +2,11 @@ node_modules/
 dist/
 *.log
 .env
+
+# Persistent data (SQLite + JSON configs) — default location
+data/
+
+# Legacy location (cuando los archivos vivian en cwd directamente)
 .dockerflow-*.json
 .dockerflow-*.db
 .dockerflow-*.db-wal

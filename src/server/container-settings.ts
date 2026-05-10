@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import type { ContainerSettings } from "../shared/types";
 
-const DATA_DIR = process.env.DATA_DIR || process.cwd();
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const SETTINGS_FILE = path.join(DATA_DIR, ".dockerflow-container-settings.json");
 
 export function loadContainerSettings(): Record<string, ContainerSettings> {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { Service, Connection, Stats, DockerEvent, LogLine, WSMessage } from "../../shared/types";
+import type { Service, Connection, Stats, DockerEvent, LogLine, WSMessage, ActionError } from "../../shared/types";
 import type { StatsStore } from "./useStatsStore";
 import { arraysEqual, applyProcessing as applyProcessingPure } from "./processing";
 
@@ -9,6 +9,7 @@ export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (po
   const statsRef = useRef<Map<string, Stats>>(new Map());
   const [events, setEvents] = useState<DockerEvent[]>([]);
   const [logLines, setLogLines] = useState<LogLine[]>([]);
+  const [actionErrors, setActionErrors] = useState<ActionError[]>([]);
   // Processing state: uid → { expected state, start time, min duration before clearing }
   const processingRef = useRef<Map<string, { expected: Service["state"]; startedAt: number; minDuration: number }>>(new Map());
   const processingIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
@@ -123,6 +124,11 @@ export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (po
             } else {
               setServices((prev) => prev.map((s) => s.uid === msg.data.uid ? { ...s, state: "exited" as any } : s));
             }
+            const errorId = `${msg.data.uid}:${msg.data.action}:${Date.now()}`;
+            setActionErrors((prev) => [
+              ...prev.slice(-4), // keep at most 5 errors
+              { id: errorId, uid: msg.data.uid, action: msg.data.action, error: msg.data.error, timestamp: Date.now() },
+            ]);
             break;
           }
         }
@@ -221,5 +227,19 @@ export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (po
     return actionTimestamps.current.get(uid);
   }, []);
 
-  return { services, connections, stats: statsRef.current, events, connected, logLines, sendMessage, clearLogLines, setProcessing, clearProcessing, getLogsSince };
+  const dismissActionError = useCallback((id: string) => {
+    setActionErrors((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  const clearActionErrors = useCallback(() => setActionErrors([]), []);
+
+  const pushActionError = useCallback((uid: string, action: string, error: string) => {
+    const errorId = `${uid}:${action}:${Date.now()}`;
+    setActionErrors((prev) => [
+      ...prev.slice(-4),
+      { id: errorId, uid, action, error, timestamp: Date.now() },
+    ]);
+  }, []);
+
+  return { services, connections, stats: statsRef.current, events, connected, logLines, sendMessage, clearLogLines, setProcessing, clearProcessing, getLogsSince, actionErrors, dismissActionError, clearActionErrors, pushActionError };
 }

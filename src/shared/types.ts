@@ -85,6 +85,20 @@ export interface StatsHistoryPoint {
 
 export type StatsRange = "1h" | "6h" | "24h" | "7d";
 
+export interface ActionError {
+  id: string;
+  uid: string;
+  action: string;
+  error: string;
+  timestamp: number;
+}
+
+export interface ServerConfig {
+  allowedPaths: string[];
+  allowNonCompose: boolean;
+  restrictedMode: boolean;
+}
+
 export type WSMessage =
   | { type: "services"; data: Service[] }
   | { type: "connections"; data: Connection[] }

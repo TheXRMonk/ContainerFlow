@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import path from "path";
 import type { Stats, StatsHistoryPoint, StatsRange } from "../shared/types";
 
-const DATA_DIR = process.env.DATA_DIR || process.cwd();
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, ".dockerflow-stats.db");
 
 let db: Database;

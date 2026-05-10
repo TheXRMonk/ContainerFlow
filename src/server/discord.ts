@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import type { DiscordConfig } from "../shared/types";
 
-const DATA_DIR = process.env.DATA_DIR || process.cwd();
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const CONFIG_FILE = path.join(DATA_DIR, ".dockerflow-discord.json");
 
 const DEFAULT_CONFIG: DiscordConfig = {

@@ -6,6 +6,16 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - containerflow-data:/app/data
+      # Common project locations — read-only. Required for `rebuild` to read
+      # docker-compose.yml + .env files. Builds run in the Docker daemon
+      # (host fs), so :ro here is safe and sufficient.
+      - /home:/home:ro
+      - /opt:/opt:ro
+      - /srv:/srv:ro
+      - /root:/root:ro
+      # Override for non-standard project paths. Set in .env, e.g.:
+      #   HOST_PROJECTS_DIR=/data/apps
+      - ${HOST_PROJECTS_DIR:-/var/empty}:${HOST_PROJECTS_DIR:-/var/empty}:ro
     environment:
       - DATA_DIR=/app/data
     env_file: .env

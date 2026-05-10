@@ -11,6 +11,10 @@ Real-time Docker architecture visualizer. Displays services, connections and met
 
 ![ContainerFlow demo](docs/demo.gif)
 
+## Documentación
+
+- **[docker-containerflow.md](./docker-containerflow.md)** — Guía rápida de Docker explicado para usar ContainerFlow: qué hace cada acción (Start, Stop, Restart, Recreate, Rebuild, Remove, Exec), restart policies, resource limits, volúmenes, healthchecks y preguntas frecuentes.
+
 ## Requisitos
 
 - [Bun](https://bun.sh) >= 1.0
@@ -38,7 +42,10 @@ Variables disponibles:
 |---|---|---|
 | `PORT` | `9470` | Puerto del servidor |
 | `AUTH_TOKEN` | _(vacio)_ | Token de autenticacion. Vacio = sin auth, solo localhost. Con valor = auth activado, acceso remoto |
-| `DATA_DIR` | _(cwd)_ | Directorio para persistencia: SQLite de historial (`.dockerflow-stats.db`), config Discord (`.dockerflow-discord.json`) y overrides por contenedor (`.dockerflow-container-settings.json`) |
+| `DATA_DIR` | `./data` | Directorio para persistencia: SQLite de historial (`.dockerflow-stats.db`), config Discord (`.dockerflow-discord.json`), overrides por contenedor (`.dockerflow-container-settings.json`), posiciones de nodos y env file overrides. Se crea automaticamente al startup. En Docker se monta en `/app/data` via volumen `containerflow-data`. |
+| `HOST_PROJECTS_DIR` | _(vacio)_ | Path adicional a montar para que `rebuild`/`remove` puedan leer compose files fuera de los defaults (`/home`, `/opt`, `/srv`, `/root`). Solo necesario para rutas no estandar (ej. `/data/apps`). |
+| `ALLOWED_PATHS` | _(vacio)_ | **Vacio = todo accionable** (modo permisivo). Con valores = lista separada por `:` de prefijos; solo containers cuyo compose file este bajo alguno de estos paths pueden ejecutar acciones, el resto aparece con candado. Ver seccion [Seguridad](#seguridad). |
+| `ALLOW_NON_COMPOSE` | `false` | **Solo aplica cuando `ALLOWED_PATHS` esta activo.** Si `ALLOWED_PATHS` esta vacio, esta variable no tiene efecto. Cuando aplica: `false` bloquea acciones sobre containers no-compose (corridos con `docker run` directo); `true` las permite. |
 
 ## Uso
 
@@ -89,6 +96,9 @@ bun run start
 - **Panel de detalle** — click en un container para ver info, stats, variables de entorno y configuracion en tabs separados
 - **Logs de containers** — logs en tiempo real con scroll automatico, filtro por stream (stdout/stderr) y opcion de copiar
 - **Acciones sobre containers** — start, stop, restart, rebuild y remove directamente desde el panel
+- **Ejecutar comandos** — terminal inline (`docker exec`) desde el DetailPanel con output, sin abrir SSH ni terminal externa
+- **Toast de errores** — cuando una accion falla (rebuild que rompe, exec con exit code != 0, etc.) aparece un toast top-right con el error completo, copiable al clipboard
+- **Control de acceso por path** — variable `ALLOWED_PATHS` permite restringir acciones a containers cuyo compose file este bajo rutas especificas. Ideal para servidores compartidos: ves todo, solo tocas lo tuyo. Los containers fuera de las rutas aparecen con candado
 - **Filtro de proyectos** — dropdown para mostrar/ocultar proyectos, persiste entre sesiones
 - **Autenticacion** — pantalla de login con AUTH_TOKEN para acceso remoto seguro
 - **Leyenda de conexiones** — colores por tipo: Database (azul), Cache (rojo), Broker (naranja), Proxy (verde)
@@ -177,9 +187,89 @@ Ver `.github/workflows/ci.yml`.
 
 ## Seguridad
 
+### Red y autenticación
+
 - **HTTPS obligatorio en produccion** — el token de autenticacion viaja en headers HTTP. Sin HTTPS, es texto plano visible en la red. Usa un reverse proxy con TLS (nginx, Caddy, Cloudflare Tunnel) delante de ContainerFlow.
 - **Rate limiting** — incluido por defecto: 5 intentos fallidos por minuto por IP. Despues del limite, retorna `429 Too Many Requests`. Aplica tanto a la API REST como a la autenticacion WebSocket.
 - **Acceso local por defecto** — sin `AUTH_TOKEN`, el servidor solo escucha en `127.0.0.1`. Con `AUTH_TOKEN`, escucha en `0.0.0.0` para acceso remoto.
+
+### Privilegios del container
+
+ContainerFlow es una herramienta privilegiada por diseño:
+
+- **Docker socket** (`/var/run/docker.sock`) — acceso completo al daemon Docker. Equivalente a root en el host: puede crear containers privilegiados, montar cualquier path, leer/escribir el filesystem completo. Si ContainerFlow se compromete, el host está comprometido.
+- **Mounts read-only del host** — el `docker-compose.yml` monta `/home`, `/opt`, `/srv` y `/root` como `:ro` para que las acciones `rebuild` y `exec` puedan leer compose files. Permite **lectura** de archivos en esos directorios (incluyendo SSH keys, git credentials, etc. de cualquier usuario en el sistema).
+
+**Implicaciones en servidor multi-usuario:** si varios usuarios (`/home/jorge`, `/home/israel`, `/home/pedro`) tienen sus proyectos en el mismo host, ContainerFlow puede leer los archivos de todos ellos. El acceso al socket Docker hace que esto sea ruido relativo (cualquiera con el socket ya tiene acceso total al host), pero conviene estar consciente.
+
+### Setup recomendado para single-user
+
+Defaults actuales — convenientes y suficientes:
+
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock
+  - containerflow-data:/app/data
+  - /home:/home:ro
+  - /opt:/opt:ro
+  - /srv:/srv:ro
+  - /root:/root:ro
+```
+
+### Setup recomendado para multi-user / producción
+
+Limita los mounts a directorios específicos donde tienes proyectos:
+
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock
+  - containerflow-data:/app/data
+  # En vez de /home completo, solo tus proyectos
+  - /home/jorge/git:/home/jorge/git:ro
+  - /srv/apps:/srv/apps:ro
+```
+
+Esto reduce el blast radius si hay un bug que filtre paths.
+
+### Setup recomendado para deploys compartidos: `ALLOWED_PATHS`
+
+Si varios admins comparten un servidor y cada uno solo debe interactuar con sus propios containers, configura la variable `ALLOWED_PATHS` en `.env`:
+
+```bash
+# .env
+ALLOWED_PATHS=/home/jorge:/srv/myapp    # rutas separadas por ":"
+ALLOW_NON_COMPOSE=false                  # opcional, default false
+```
+
+**Comportamiento:**
+
+- `ALLOWED_PATHS` vacío (default) → modo permisivo: todas las acciones disponibles para todos los containers
+- `ALLOWED_PATHS` con valores → modo estricto:
+  - **Visualización, stats y logs:** siempre disponibles para todos los containers (la visibilidad viene del Docker socket)
+  - **Acciones** (start/stop/restart/rebuild/remove/exec): solo permitidas si el compose file del container está bajo una ruta permitida
+  - Los containers fuera de las rutas aparecen con un **ícono de candado 🔒** y todas sus acciones quedan deshabilitadas
+  - El menú contextual y el panel de detalle muestran un badge "View-only"
+
+**`ALLOW_NON_COMPOSE`** controla qué pasa con containers corridos manualmente (`docker run` sin labels de compose):
+
+- `false` (default): bloquea acciones — view-only para containers no-compose
+- `true`: permite acciones sobre containers no-compose (útil si tienes containers utilitarios como Portainer agent, Watchtower, etc.)
+
+**Ejemplo multi-usuario:**
+
+```bash
+# Servidor compartido con jorge, israel, pedro, nayeli
+# Cada uno corre su propia instancia de ContainerFlow en puerto distinto
+# El de jorge:
+ALLOWED_PATHS=/home/jorge
+
+# El de israel:
+ALLOWED_PATHS=/home/israel
+```
+
+Cada uno ve **todos** los containers del servidor, pero solo puede hacer rebuild/restart/exec sobre los suyos.
+
+**Endpoint relevante:** `GET /api/config` devuelve la config activa (consumido por el frontend para deshabilitar botones).
 
 ## Stack
 
@@ -214,21 +304,23 @@ src/
       ServiceNode.tsx — nodo visual por container
       GroupNode.tsx    — header de grupo (proyecto/compose)
     hooks/
-      useDocker.ts        — hook WebSocket para datos en tiempo real
+      useDocker.ts        — hook WebSocket para datos en tiempo real + toast de errores de accion
+      useServerConfig.ts  — fetch /api/config + helper canInteract() para ALLOWED_PATHS
       useStatsHistory.ts  — fetch del historial de stats por rango (1h/6h/24h/7d)
       useStatsStore.ts    — store en memoria para stats live
       processing.ts       — logica pura de estados processing
     engine/
       layout.ts      — layout de grupos + grid + edges
     components/
-      HeaderBar.tsx      — barra superior con navegacion
-      EdgeLegend.tsx     — leyenda de tipos de conexion
-      LoginScreen.tsx    — pantalla de autenticacion
-      NodeContextMenu.tsx — menu contextual de nodos
-      OffsetEdge.tsx     — edge custom con offset para evitar superposicion
-      Sparkline.tsx      — gráfica de línea ligera para historial de stats
-      StatsCard.tsx      — tarjeta de métrica con sparkline, hover, promedio y umbral
-      ThresholdBar.tsx   — slider de umbral por contenedor con override/reset
+      HeaderBar.tsx        — barra superior con navegacion
+      EdgeLegend.tsx       — leyenda de tipos de conexion
+      LoginScreen.tsx      — pantalla de autenticacion
+      NodeContextMenu.tsx  — menu contextual de nodos (con disable cuando locked)
+      OffsetEdge.tsx       — edge custom con offset para evitar superposicion
+      Sparkline.tsx        — gráfica de línea ligera para historial de stats
+      StatsCard.tsx        — tarjeta de métrica con sparkline, hover, promedio y umbral
+      ThresholdBar.tsx     — slider de umbral por contenedor con override/reset
+      ActionErrorToast.tsx — stack de toasts top-right para errores de acciones
     panels/
       DetailPanel.tsx — panel lateral con info, stats, env, config y logs
       LogPanel.tsx    — panel de logs por container

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo, startTransition } from "react";
-import { X, Pause, Play, Square, RotateCw, Hammer, Trash2, Terminal, Network, Globe, Info as InfoIcon, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check, Loader2, AlertTriangle, Maximize2, ExternalLink, Pencil, HelpCircle, Save } from "lucide-react";
+import { X, Pause, Play, Square, RotateCw, Hammer, Trash2, Terminal, Network, Globe, Info as InfoIcon, Activity, Variable, Settings, ChevronUp, ChevronDown, Eye, EyeOff, Copy, Check, Loader2, AlertTriangle, Maximize2, ExternalLink, Pencil, HelpCircle, Save, Lock, RefreshCw } from "lucide-react";
+import { Tooltip } from "../components/Tooltip";
 import type { Service, Stats, LogLine, WSMessage, Connection, DockerEvent, ContainerSettings, DiscordConfig, StatsRange } from "../../shared/types";
 import { useT } from "../i18n";
 import { useStatsHistory } from "../hooks/useStatsHistory";
@@ -45,9 +46,11 @@ interface DetailPanelProps {
   logLines: LogLine[];
   token: string;
   closing?: boolean;
+  locked?: boolean;
   onClose: () => void;
   onAction: (serviceUid: string, expectedState: Service["state"], minDuration?: number) => void;
   clearProcessing: (uid: string) => void;
+  pushActionError: (uid: string, action: string, error: string) => void;
   sendMessage: (msg: WSMessage) => void;
   clearLogLines: () => void;
   connections: Connection[];
@@ -59,7 +62,7 @@ interface DetailPanelProps {
   events: DockerEvent[];
 }
 
-export function DetailPanel({ service, stats, logLines, token, closing, onClose, onAction, clearProcessing, sendMessage, clearLogLines, connections, services, getLogsSince, initialLogsFullscreen, envFiles, onEnvFileChange, events }: DetailPanelProps) {
+export function DetailPanel({ service, stats, logLines, token, closing, locked, onClose, onAction, clearProcessing, pushActionError, sendMessage, clearLogLines, connections, services, getLogsSince, initialLogsFullscreen, envFiles, onEnvFileChange, events }: DetailPanelProps) {
   const { t } = useT();
   const [initialLogs, setInitialLogs] = useState<LogLine[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -163,9 +166,9 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
   }, [isProcessing, processingStartedAt]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const [confirmAction, setConfirmAction] = useState<"stop" | "restart" | "rebuild" | "remove" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"stop" | "restart" | "rebuild" | "recreate" | "remove" | null>(null);
 
-  const executeAction = useCallback(async (action: "stop" | "start" | "restart" | "rebuild" | "remove") => {
+  const executeAction = useCallback(async (action: "stop" | "start" | "restart" | "rebuild" | "recreate" | "remove") => {
     setActionLoading(action);
     setActionResult(null);
     setConfirmAction(null);
@@ -174,9 +177,9 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
     // Optimistic processing — set BEFORE fetch
     const expectedState: Service["state"] =
       action === "stop" || action === "remove" ? "exited" :
-      action === "start" || action === "restart" || action === "rebuild" ? "running" :
+      action === "start" || action === "restart" || action === "rebuild" || action === "recreate" ? "running" :
       service.state;
-    const minDuration = action === "restart" ? 2000 : action === "rebuild" ? 3000 : 0;
+    const minDuration = action === "restart" ? 2000 : (action === "rebuild" || action === "recreate") ? 3000 : 0;
     onAction(service.uid, expectedState, minDuration);
     setInitialLogs([]);
     clearLogLines();
@@ -196,16 +199,20 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
         }
       } else {
         clearProcessing(service.uid);
-        setActionResult({ type: "error", message: data.error || `${t("detail.actionFailed")} ${action}` });
+        const errMsg = data.error || `${t("detail.actionFailed")} ${action}`;
+        setActionResult({ type: "error", message: errMsg });
+        pushActionError(service.uid, action, errMsg);
       }
-    } catch {
+    } catch (err: any) {
       clearProcessing(service.uid);
-      setActionResult({ type: "error", message: `${t("detail.actionFailed")} ${action}` });
+      const errMsg = err?.message || `${t("detail.actionFailed")} ${action}`;
+      setActionResult({ type: "error", message: errMsg });
+      pushActionError(service.uid, action, errMsg);
     } finally {
       setActionLoading(null);
       setTimeout(() => setActionResult(null), 3000);
     }
-  }, [service.id, service.uid, token, onAction, clearProcessing, sendMessage, clearLogLines]);
+  }, [service.id, service.uid, token, onAction, clearProcessing, pushActionError, sendMessage, clearLogLines, t]);
 
   const runExec = useCallback(async () => {
     if (!execCmd.trim()) return;
@@ -378,6 +385,12 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
         <div className="flex items-center gap-2.5">
           <span className={`w-2 h-2 rounded-full ${stateDot}`} />
           <span className="text-sm font-semibold text-white truncate">{service.name}</span>
+          {locked && (
+            <span className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 bg-slate-700/60 border border-slate-600/50 rounded" title={t("access.viewOnly")}>
+              <Lock size={10} />
+              {t("access.viewOnly")}
+            </span>
+          )}
           {service.ports.length > 0 && service.state === "running" && (
             <a
               href={`http://${window.location.hostname}:${service.ports[0].host}`}
@@ -406,32 +419,39 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
           ) : (
             <>
               {service.compose_file && (
-                <button
-                  onClick={() => setConfirmAction("rebuild")}
-                  disabled={!!actionLoading}
-                  className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-cyan-400 hover:bg-cyan-400/10 transition-colors disabled:opacity-40"
-                  title={t("actions.rebuild")}
-                >
-                  {actionLoading === "rebuild" ? <Loader2 size={12} className="animate-spin" /> : <Hammer size={12} />}
-                  {t("actions.rebuild")}
-                </button>
+                <>
+                  <button
+                    onClick={() => setConfirmAction("recreate")}
+                    disabled={!!actionLoading || locked}
+                    className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-cyan-400 hover:bg-cyan-400/10 transition-colors disabled:opacity-40"
+                  >
+                    {actionLoading === "recreate" ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    {t("actions.recreate")}
+                  </button>
+                  <button
+                    onClick={() => setConfirmAction("rebuild")}
+                    disabled={!!actionLoading || locked}
+                    className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-cyan-400 hover:bg-cyan-400/10 transition-colors disabled:opacity-40"
+                  >
+                    {actionLoading === "rebuild" ? <Loader2 size={12} className="animate-spin" /> : <Hammer size={12} />}
+                    {t("actions.rebuild")}
+                  </button>
+                </>
               )}
               {service.state === "running" ? (
                 <>
                   <button
                     onClick={() => setConfirmAction("restart")}
-                    disabled={!!actionLoading}
+                    disabled={!!actionLoading || locked}
                     className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-yellow-400 hover:bg-yellow-400/10 transition-colors disabled:opacity-40"
-                    title={t("actions.restart")}
                   >
                     {actionLoading === "restart" ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
                     {t("actions.restart")}
                   </button>
                   <button
                     onClick={() => setConfirmAction("stop")}
-                    disabled={!!actionLoading}
+                    disabled={!!actionLoading || locked}
                     className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-red-400 hover:bg-red-400/10 transition-colors disabled:opacity-40"
-                    title={t("actions.stop")}
                   >
                     {actionLoading === "stop" ? <Loader2 size={12} className="animate-spin" /> : <Square size={12} />}
                     {t("actions.stop")}
@@ -441,20 +461,18 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
                 <>
                   <button
                     onClick={() => setConfirmAction("remove")}
-                    disabled={!!actionLoading}
+                    disabled={!!actionLoading || locked}
                     className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-red-400 hover:bg-red-400/10 transition-colors disabled:opacity-40"
-                    title={t("actions.remove")}
                   >
                     {actionLoading === "remove" ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                     {t("actions.remove")}
                   </button>
                   <button
                     onClick={() => executeAction("start")}
-                    disabled={!!actionLoading}
+                    disabled={!!actionLoading || locked}
                     className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors disabled:opacity-40 ${
                       isCrashed ? "text-orange-400 hover:bg-orange-400/10" : "text-emerald-400 hover:bg-emerald-400/10"
                     }`}
-                    title={isCrashed ? t("actions.retry") : t("actions.start")}
                   >
                     {actionLoading === "start" ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
                     {isCrashed ? t("actions.retry") : t("actions.start")}
@@ -480,24 +498,30 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
         <div className="px-4 py-2.5 bg-slate-800/90 border-b border-slate-700/60 flex items-center gap-3 shrink-0">
           <AlertTriangle size={14} className={`shrink-0 ${
             confirmAction === "stop" || confirmAction === "remove" ? "text-red-400" :
-            confirmAction === "rebuild" ? "text-cyan-400" :
+            confirmAction === "rebuild" || confirmAction === "recreate" ? "text-cyan-400" :
             "text-yellow-400"
           }`} />
-          <span className="text-xs text-slate-300 flex-1">
+          <span className="text-xs text-slate-300 flex-1 flex items-center gap-1.5">
             {confirmAction === "stop" ? t("detail.confirmStop") :
              confirmAction === "restart" ? t("detail.confirmRestart") :
              confirmAction === "remove" ? t("detail.confirmRemove") :
+             confirmAction === "recreate" ? t("detail.confirmRecreate") :
              t("detail.confirmRebuild")}
+            <Tooltip text={t(`actions.${confirmAction}.tooltip` as any)} width="w-72" placement="bottom" />
           </span>
           <button
             onClick={() => executeAction(confirmAction)}
             className={`px-3 py-1 rounded text-[11px] font-medium text-white transition-colors ${
               confirmAction === "stop" || confirmAction === "remove" ? "bg-red-700 hover:bg-red-600" :
-              confirmAction === "rebuild" ? "bg-cyan-700 hover:bg-cyan-600" :
+              confirmAction === "rebuild" || confirmAction === "recreate" ? "bg-cyan-700 hover:bg-cyan-600" :
               "bg-yellow-700 hover:bg-yellow-600"
             }`}
           >
-            {confirmAction === "stop" ? t("actions.stop") : confirmAction === "restart" ? t("actions.restart") : confirmAction === "remove" ? t("actions.remove") : t("actions.rebuild")}
+            {confirmAction === "stop" ? t("actions.stop") :
+             confirmAction === "restart" ? t("actions.restart") :
+             confirmAction === "remove" ? t("actions.remove") :
+             confirmAction === "recreate" ? t("actions.recreate") :
+             t("actions.rebuild")}
           </button>
           <button
             onClick={() => setConfirmAction(null)}
@@ -1084,7 +1108,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, onClose,
               )}
             </div>
             <div className="flex items-center gap-1">
-              {service.state === "running" && (
+              {service.state === "running" && !locked && (
                 <button
                   onClick={() => { setExecOpen((v) => { if (!v) setLogsExpanded(true); return !v; }); setExecResult(null); setExecError(null); }}
                   className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${execOpen ? "text-purple-300 bg-purple-400/10" : "text-purple-400 hover:bg-purple-400/10"}`}
@@ -1283,28 +1307,6 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
 }
 
 
-function Tooltip({ text }: { text: string }) {
-  const [show, setShow] = useState(false);
-  return (
-    <span className="relative inline-flex">
-      <button
-        type="button"
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
-        onClick={() => setShow((v) => !v)}
-        className="text-slate-500 hover:text-slate-300 transition-colors"
-      >
-        <HelpCircle size={10} />
-      </button>
-      {show && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-xs text-slate-200 w-48 text-left shadow-xl z-50 leading-relaxed">
-          {text}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-slate-700" />
-        </div>
-      )}
-    </span>
-  );
-}
 
 function StatCard({ label, value, extra, color, limit, threshold, thresholdLabel, limitLabel, thresholdTooltip, limitTooltip }: { label: string; value: string; extra?: string; color: string; limit?: string; threshold?: string; thresholdLabel?: string; limitLabel?: string; thresholdTooltip?: string; limitTooltip?: string }) {
   return (
@@ -1321,14 +1323,14 @@ function StatCard({ label, value, extra, color, limit, threshold, thresholdLabel
               <div className="flex items-center gap-1">
                 <span className="text-[10px] text-slate-500">{thresholdLabel}:</span>
                 <span className="text-[10px] text-slate-400 font-mono">{threshold}</span>
-                {thresholdTooltip && <Tooltip text={thresholdTooltip} />}
+                {thresholdTooltip && <Tooltip text={thresholdTooltip} size={10} width="w-48" />}
               </div>
             )}
             {limit && (
               <div className="flex items-center gap-1">
                 <span className="text-[10px] text-slate-500">{limitLabel}:</span>
                 <span className="text-[10px] text-slate-400 font-mono">{limit}</span>
-                {limitTooltip && <Tooltip text={limitTooltip} />}
+                {limitTooltip && <Tooltip text={limitTooltip} size={10} width="w-48" />}
               </div>
             )}
           </div>

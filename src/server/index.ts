@@ -11,8 +11,46 @@ import { loadContainerSettings, saveContainerSettings } from "./container-settin
 import { initStatsDB, insertStats, getStatsHistory, getAllServicesStatsHistory } from "./stats-db";
 import type { Service, WSMessage, DiscordConfig, ContainerSettings, StatsRange } from "../shared/types";
 
-/** Directory for persistent data files (positions, env overrides) */
-const DATA_DIR = process.env.DATA_DIR || process.cwd();
+/** Directory for persistent data files (SQLite, JSON configs, positions).
+ *  Default: ./data subdirectory of cwd. Override via DATA_DIR env var. */
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
+fs.mkdirSync(DATA_DIR, { recursive: true });
+
+/** Paths under which actions (start/stop/restart/rebuild/remove/exec) are allowed.
+ *  Empty = permissive mode (all actions allowed on all containers).
+ *  Set = strict mode (actions only allowed for compose files under these paths). */
+const ALLOWED_PATHS = (process.env.ALLOWED_PATHS || "")
+  .split(":")
+  .map((p) => p.trim())
+  .filter(Boolean)
+  .map((p) => p.replace(/\/+$/, "")); // strip trailing slashes
+
+/** When ALLOWED_PATHS is set, allow actions on non-compose containers (no compose label). */
+const ALLOW_NON_COMPOSE = process.env.ALLOW_NON_COMPOSE === "true";
+
+/** Strict mode is active when ALLOWED_PATHS has at least one entry. */
+const RESTRICTED_MODE = ALLOWED_PATHS.length > 0;
+
+/** Returns true if filePath is under one of the allowed prefixes. */
+function isPathAllowed(filePath: string): boolean {
+  if (!RESTRICTED_MODE) return true;
+  const normalized = path.resolve(filePath);
+  return ALLOWED_PATHS.some((prefix) => normalized === prefix || normalized.startsWith(prefix + "/"));
+}
+
+/** Returns null if container can be acted upon, or an error message string if not. */
+function checkContainerAccess(info: { Config?: { Labels?: Record<string, string> } }): string | null {
+  if (!RESTRICTED_MODE) return null;
+  const composeFile = info.Config?.Labels?.["com.docker.compose.project.config_files"];
+  if (!composeFile) {
+    if (ALLOW_NON_COMPOSE) return null;
+    return "This container has no compose file. Actions are restricted in this mode (ALLOWED_PATHS is set, ALLOW_NON_COMPOSE is false).";
+  }
+  if (!isPathAllowed(composeFile)) {
+    return `Container's compose file is outside ALLOWED_PATHS:\n  ${composeFile}\n\nAllowed paths:\n${ALLOWED_PATHS.map((p) => `  ${p}`).join("\n")}`;
+  }
+  return null;
+}
 
 /** Env-file overrides per compose file (persisted to file) */
 const ENV_FILES_FILE = path.join(DATA_DIR, ".dockerflow-env-files.json");
@@ -162,6 +200,15 @@ app.get("/api/init", async (c) => {
   return c.json({ services, connections, positions });
 });
 
+// ── Server config (read by frontend to disable buttons for non-allowed paths) ──
+app.get("/api/config", (c) => {
+  return c.json({
+    allowedPaths: ALLOWED_PATHS,
+    allowNonCompose: ALLOW_NON_COMPOSE,
+    restrictedMode: RESTRICTED_MODE,
+  });
+});
+
 // ── Helper: get service uid from container inspect info ──
 function getContainerUid(info: any): string {
   const project = info.Config?.Labels?.["com.docker.compose.project"] || "standalone";
@@ -176,6 +223,8 @@ app.post("/api/containers/:id/stop", async (c) => {
   try {
     const container = docker.getContainer(id);
     const info = await container.inspect();
+    const denied = checkContainerAccess(info);
+    if (denied) return c.json({ error: denied }, 403);
     await container.stop();
     immediateRefresh();
     const uid = getContainerUid(info);
@@ -193,6 +242,8 @@ app.post("/api/containers/:id/start", async (c) => {
   try {
     const container = docker.getContainer(id);
     const info = await container.inspect();
+    const denied = checkContainerAccess(info);
+    if (denied) return c.json({ error: denied }, 403);
     await container.start();
     immediateRefresh();
     const uid = getContainerUid(info);
@@ -210,6 +261,8 @@ app.post("/api/containers/:id/restart", async (c) => {
   try {
     const container = docker.getContainer(id);
     const info = await container.inspect();
+    const denied = checkContainerAccess(info);
+    if (denied) return c.json({ error: denied }, 403);
     await container.restart();
     immediateRefresh();
     const uid = getContainerUid(info);
@@ -226,11 +279,27 @@ app.post("/api/containers/:id/rebuild", async (c) => {
   try {
     const container = docker.getContainer(id);
     const info = await container.inspect();
+    const denied = checkContainerAccess(info);
+    if (denied) return c.json({ error: denied }, 403);
     const composeFile = info.Config?.Labels?.["com.docker.compose.project.config_files"];
     const serviceName = info.Config?.Labels?.["com.docker.compose.service"];
     const project = info.Config?.Labels?.["com.docker.compose.project"] || "standalone";
     if (!composeFile || !serviceName) {
       return c.json({ error: "Not a Compose service — rebuild requires docker-compose" }, 400);
+    }
+    if (!fs.existsSync(composeFile)) {
+      const dir = path.dirname(composeFile);
+      return c.json({
+        error:
+          `Compose file not accessible from ContainerFlow:\n` +
+          `  ${composeFile}\n\n` +
+          `Este path existe en el host pero no está montado dentro del container de ContainerFlow.\n\n` +
+          `Fix: agrega este volumen a docker-compose.yml de ContainerFlow:\n` +
+          `  - ${dir}:${dir}:ro\n\n` +
+          `O usa la variable HOST_PROJECTS_DIR en .env:\n` +
+          `  HOST_PROJECTS_DIR=${dir}\n\n` +
+          `Luego: docker compose up -d --force-recreate containerflow`,
+      }, 400);
     }
     const uid = `${project}/${serviceName}`;
     const envArgs = findEnvFileArgs(composeFile);
@@ -260,12 +329,67 @@ app.post("/api/containers/:id/rebuild", async (c) => {
   }
 });
 
+app.post("/api/containers/:id/recreate", async (c) => {
+  const id = c.req.param("id");
+  if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
+  try {
+    const container = docker.getContainer(id);
+    const info = await container.inspect();
+    const denied = checkContainerAccess(info);
+    if (denied) return c.json({ error: denied }, 403);
+    const composeFile = info.Config?.Labels?.["com.docker.compose.project.config_files"];
+    const serviceName = info.Config?.Labels?.["com.docker.compose.service"];
+    const project = info.Config?.Labels?.["com.docker.compose.project"] || "standalone";
+    if (!composeFile || !serviceName) {
+      return c.json({ error: "Not a Compose service — recreate requires docker-compose" }, 400);
+    }
+    if (!fs.existsSync(composeFile)) {
+      const dir = path.dirname(composeFile);
+      return c.json({
+        error:
+          `Compose file not accessible from ContainerFlow:\n` +
+          `  ${composeFile}\n\n` +
+          `Fix: agrega a docker-compose.yml de ContainerFlow:\n` +
+          `  - ${dir}:${dir}:ro\n\n` +
+          `Luego: docker compose up -d --force-recreate containerflow`,
+      }, 400);
+    }
+    const uid = `${project}/${serviceName}`;
+    const envArgs = findEnvFileArgs(composeFile);
+    // Recreate uses existing image (no --build), only re-applies compose config
+    const proc = Bun.spawn(["docker", "compose", "-f", composeFile, ...envArgs, "up", "--force-recreate", "-d", serviceName], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    proc.exited.then(async (exitCode) => {
+      if (exitCode !== 0) {
+        const stderr = await new Response(proc.stderr).text();
+        const errorMsg = stderr || `Recreate failed with exit code ${exitCode}`;
+        broadcast({ type: "action_error", data: { uid, action: "recreate", error: errorMsg } });
+        try { notifyActionError(uid, "recreate", errorMsg, loadDiscordConfig()); } catch {}
+      } else {
+        try { notifyUIAction(uid, "recreate", loadDiscordConfig()); } catch {}
+      }
+      scheduleRefresh();
+    }).catch((err) => {
+      const errorMsg = err?.message || "Recreate failed";
+      broadcast({ type: "action_error", data: { uid, action: "recreate", error: errorMsg } });
+      try { notifyActionError(uid, "recreate", errorMsg, loadDiscordConfig()); } catch {}
+    });
+    return c.json({ ok: true });
+  } catch (err: any) {
+    return c.json({ error: err?.message || "Failed to recreate container" }, 500);
+  }
+});
+
 app.post("/api/containers/:id/remove", async (c) => {
   const id = c.req.param("id");
   if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
   try {
     const container = docker.getContainer(id);
     const info = await container.inspect();
+    const denied = checkContainerAccess(info);
+    if (denied) return c.json({ error: denied }, 403);
     const composeFile = info.Config?.Labels?.["com.docker.compose.project.config_files"];
     const serviceName = info.Config?.Labels?.["com.docker.compose.service"];
     if (!composeFile || !serviceName) {
@@ -273,6 +397,17 @@ app.post("/api/containers/:id/remove", async (c) => {
       try { await container.stop(); } catch {}
       await container.remove({ force: true });
       return c.json({ ok: true });
+    }
+    if (!fs.existsSync(composeFile)) {
+      const dir = path.dirname(composeFile);
+      return c.json({
+        error:
+          `Compose file not accessible from ContainerFlow:\n` +
+          `  ${composeFile}\n\n` +
+          `Fix: agrega a docker-compose.yml de ContainerFlow:\n` +
+          `  - ${dir}:${dir}:ro\n\n` +
+          `Luego: docker compose up -d --force-recreate containerflow`,
+      }, 400);
     }
     const envArgs = findEnvFileArgs(composeFile);
     const proc = Bun.spawn(["docker", "compose", "-f", composeFile, ...envArgs, "rm", "-sf", serviceName], {
@@ -294,6 +429,10 @@ app.post("/api/containers/:id/exec", async (c) => {
   const id = c.req.param("id");
   if (!/^[a-f0-9]{12,64}$/.test(id)) return c.json({ error: "Invalid container ID" }, 400);
   try {
+    const container = docker.getContainer(id);
+    const info = await container.inspect();
+    const denied = checkContainerAccess(info);
+    if (denied) return c.json({ error: denied }, 403);
     const body = await c.req.json();
     const cmd = body?.cmd;
     if (!cmd || typeof cmd !== "string") return c.json({ error: "Missing cmd" }, 400);
@@ -317,7 +456,6 @@ app.post("/api/containers/:id/exec", async (c) => {
     if (current) parts.push(current);
     if (parts.length === 0) return c.json({ error: "Empty command" }, 400);
 
-    const container = docker.getContainer(id);
     const exec = await container.exec({ Cmd: parts, AttachStdout: true, AttachStderr: true });
     const stream = await exec.start({});
 

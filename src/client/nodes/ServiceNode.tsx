@@ -23,6 +23,7 @@ import {
   Mail,
   BarChart3,
   AlertTriangle,
+  Lock,
   type LucideIcon,
 } from "lucide-react";
 
@@ -36,6 +37,7 @@ interface ServiceNodeData {
   id?: string;
   activeHandles?: string[];
   highlighted?: boolean;
+  locked?: boolean;
   [key: string]: unknown;
 }
 
@@ -136,11 +138,16 @@ export const ServiceNode = memo(function ServiceNode({ data, id }: NodeProps) {
 
   return (
     <div
-      title={`${d.label} (${d.state})\nImage: ${d.image}\nID: ${d.id || ""}\nPorts: ${d.ports?.map((p) => `${p.host}:${p.container}`).join(", ") || "none"}`}
+      title={`${d.label} (${d.state})${d.locked ? " — view-only (outside ALLOWED_PATHS)" : ""}\nImage: ${d.image}\nID: ${d.id || ""}\nPorts: ${d.ports?.map((p) => `${p.host}:${p.container}`).join(", ") || "none"}`}
       className={`relative rounded-xl border ${s.border} ${s.bg} backdrop-blur-sm
                   shadow-lg shadow-black/30 p-4 min-w-[220px] ring-2 ${s.ring}
-                  transition-[opacity,box-shadow] duration-300 ${flashClass}`}
+                  transition-[opacity,box-shadow] duration-300 ${flashClass} ${d.locked ? "opacity-70" : ""}`}
     >
+      {d.locked && (
+        <div className="absolute top-1.5 right-1.5 flex items-center justify-center w-5 h-5 rounded bg-slate-700/80 border border-slate-600/60 z-10" title={t("access.viewOnly")}>
+          <Lock size={11} className="text-slate-400" />
+        </div>
+      )}
       {/* Top handles — left offset, transform centered horizontally */}
       {offsets.map((o, i) => (
         <Handle key={`t${i}`} type="source" position={Position.Top} id={`top-${i}`} className={hdot(`top-${i}`)} style={{ left: o, transform: "translate(-50%, -50%)" }} />

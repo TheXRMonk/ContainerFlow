@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { Settings, Server, Bell, Info, Send, Save, Check, X, HelpCircle } from "lucide-react";
+import { Settings, Server, Bell, Info, Send, Save, Check, X } from "lucide-react";
 import type { DiscordConfig } from "../../shared/types";
 import { useT } from "../i18n";
+import { Tooltip } from "../components/Tooltip";
 
 interface SettingsPageProps {
   projects: string[];
@@ -25,29 +26,6 @@ const DEFAULT_CONFIG: DiscordConfig = {
   cooldownMinutes: 5,
   downReminderMinutes: 5,
 };
-
-function Tooltip({ text }: { text: string }) {
-  const [show, setShow] = useState(false);
-  return (
-    <span className="relative inline-flex">
-      <button
-        type="button"
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
-        onClick={() => setShow((v) => !v)}
-        className="text-slate-500 hover:text-slate-300 transition-colors"
-      >
-        <HelpCircle size={13} />
-      </button>
-      {show && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-xs text-slate-200 w-56 text-left shadow-xl z-50 leading-relaxed">
-          {text}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-slate-700" />
-        </div>
-      )}
-    </span>
-  );
-}
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (

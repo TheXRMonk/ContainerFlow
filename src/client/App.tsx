@@ -15,6 +15,7 @@ import "@xyflow/react/dist/style.css";
 import { ServiceNode } from "./nodes/ServiceNode";
 import { GroupNode } from "./nodes/GroupNode";
 import { useDocker } from "./hooks/useDocker";
+import { useServerConfig } from "./hooks/useServerConfig";
 import { I18nProvider, useT } from "./i18n";
 import { createStatsStore, StatsStoreContext } from "./hooks/useStatsStore";
 import { buildLayout, computeEdges, NODE_WIDTH, NODE_HEIGHT, GROUP_PADDING, GROUP_HEADER } from "./engine/layout";
@@ -24,6 +25,7 @@ import { LoginScreen } from "./components/LoginScreen";
 import { OffsetEdge } from "./components/OffsetEdge";
 import { HeaderBar, type Page } from "./components/HeaderBar";
 import { EdgeLegend } from "./components/EdgeLegend";
+import { ActionErrorToast } from "./components/ActionErrorToast";
 import { Wifi, WifiOff, ChevronDown, Check } from "lucide-react";
 import { MonitoringPage } from "./pages/MonitoringPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -82,7 +84,8 @@ function Dashboard({ token }: { token: string }) {
   const onPositions = useCallback((pos: Record<string, { x: number; y: number }>) => {
     savedPositions.current = pos;
   }, []);
-  const { services, connections, stats, events, connected, logLines, sendMessage, clearLogLines, setProcessing, clearProcessing, getLogsSince } = useDocker(token, statsStore, onPositions);
+  const { services, connections, stats, events, connected, logLines, sendMessage, clearLogLines, setProcessing, clearProcessing, getLogsSince, actionErrors, dismissActionError, clearActionErrors, pushActionError } = useDocker(token, statsStore, onPositions);
+  const { config: serverConfig, canInteract } = useServerConfig(token);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const initialLayoutDone = useRef(false);
@@ -325,6 +328,14 @@ function Dashboard({ token }: { token: string }) {
 
     const { nodes: newNodes } = buildLayout(filteredServices, filteredConnections);
 
+    // Mark service nodes as locked when restricted mode is active
+    for (const n of newNodes) {
+      if (n.type === "service") {
+        const svc = filteredServices.find((s) => s.uid === n.id);
+        if (svc) (n.data as any).locked = !canInteract(svc);
+      }
+    }
+
     if (!initialLayoutDone.current) {
       let positioned = newNodes.map((n) => {
         const saved = savedPositions.current[n.id];
@@ -405,7 +416,7 @@ function Dashboard({ token }: { token: string }) {
         return result;
       });
     }
-  }, [filteredServices, filteredConnections]);
+  }, [filteredServices, filteredConnections, canInteract]);
 
   // Recompute edges + handles on drag end (not every pixel)
   const recomputeEdges = useCallback((currentNodes: Node[]) => {
@@ -508,6 +519,8 @@ function Dashboard({ token }: { token: string }) {
         onPageChange={(page) => { setContextMenu(null); navigateTo(page); }}
         events={events}
       />
+
+      <ActionErrorToast errors={actionErrors} onDismiss={dismissActionError} onClearAll={clearActionErrors} />
 
       {activePage === "monitoring" && <MonitoringPage events={events} token={token} services={services} />}
       {activePage === "settings" && <SettingsPage projects={projects} servicesCount={services.length} token={token} />}
@@ -674,23 +687,35 @@ function Dashboard({ token }: { token: string }) {
           <NodeContextMenu
             position={{ x: contextMenu.x, y: contextMenu.y }}
             service={contextMenu.service}
+            locked={!canInteract(contextMenu.service)}
             onClose={() => setContextMenu(null)}
             onAction={(action) => {
               const svc = contextMenu.service;
               // Optimistic processing — set BEFORE fetch
               const expectedState: Service["state"] =
                 action === "stop" || action === "remove" ? "exited" :
-                action === "start" || action === "restart" || action === "rebuild" ? "running" :
+                action === "start" || action === "restart" || action === "rebuild" || action === "recreate" ? "running" :
                 svc.state;
-              const minDuration = action === "restart" ? 2000 : action === "rebuild" ? 3000 : 0;
+              const minDuration = action === "restart" ? 2000 : (action === "rebuild" || action === "recreate") ? 3000 : 0;
               setProcessing(svc.uid, expectedState, minDuration);
               const headers: Record<string, string> = {};
               if (token) headers["Authorization"] = `Bearer ${token}`;
               fetch(`/api/containers/${svc.id}/${action}`, { method: "POST", headers })
-                .then((r) => {
-                  if (!r.ok) clearProcessing(svc.uid);
+                .then(async (r) => {
+                  if (!r.ok) {
+                    clearProcessing(svc.uid);
+                    try {
+                      const data = await r.json();
+                      if (data?.error) pushActionError(svc.uid, action, data.error);
+                    } catch {
+                      pushActionError(svc.uid, action, `HTTP ${r.status}`);
+                    }
+                  }
                 })
-                .catch(() => clearProcessing(svc.uid));
+                .catch((err) => {
+                  clearProcessing(svc.uid);
+                  pushActionError(svc.uid, action, err?.message || "Network error");
+                });
             }}
             onOpenLogs={() => {
               const svc = contextMenu.service;
@@ -731,9 +756,11 @@ function Dashboard({ token }: { token: string }) {
             logLines={panelLogLines}
             token={token}
             closing={panelClosing}
+            locked={!canInteract(detailService)}
             onClose={closeDetail}
             onAction={setProcessing}
             clearProcessing={clearProcessing}
+            pushActionError={pushActionError}
             sendMessage={sendMessage}
             clearLogLines={clearLogLines}
             connections={filteredConnections}

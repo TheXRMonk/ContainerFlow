@@ -32,15 +32,38 @@ const en = {
   "login.errorConnectionRefused": "Connection refused",
   "login.errorConnectionFailed": "ERROR: Connection failed",
 
-  // Context menu
+  // Context menu — labels stay in English (match docker commands)
   "actions.restart": "Restart",
   "actions.stop": "Stop",
   "actions.start": "Start",
   "actions.remove": "Remove",
   "actions.rebuild": "Rebuild",
+  "actions.recreate": "Recreate",
   "actions.openLogs": "Open Logs",
   "actions.open": "Open",
   "actions.retry": "Retry",
+
+  // Action tooltips (hover descriptions)
+  "actions.start.tooltip": "Starts the container (docker start)",
+  "actions.stop.tooltip": "Stops the container with SIGTERM, then SIGKILL after timeout (docker stop)",
+  "actions.restart.tooltip": "Stops and starts the same container (docker restart). Keeps image and config.",
+  "actions.rebuild.tooltip": "Rebuilds the image from Dockerfile and creates a new container (docker compose up --build). Apply code changes.",
+  "actions.recreate.tooltip": "Recreates the container with current compose config, reusing existing image (docker compose up --force-recreate). Apply compose changes without rebuilding.",
+  "actions.remove.tooltip": "Stops and permanently removes the container (docker rm). For compose services, also cleans associated networks.",
+  "actions.retry.tooltip": "Retries starting a crashed container",
+
+  // Action error toast
+  "toast.actionFailed": "{action} failed",
+  "toast.dismiss": "Dismiss",
+  "toast.dismissAll": "Dismiss all",
+  "toast.copy": "Copy",
+  "toast.copied": "Copied",
+  "toast.expand": "Show more",
+  "toast.collapse": "Show less",
+
+  // Access control (ALLOWED_PATHS)
+  "access.viewOnly": "View-only",
+  "access.restricted": "Outside ALLOWED_PATHS — actions disabled",
 
   // Edge legend
   "legend.connections": "Connections",
@@ -138,6 +161,7 @@ const en = {
   "detail.confirmRestart": "Restart this container? This will briefly interrupt the service.",
   "detail.confirmRemove": "Remove this container? This will stop and delete it.",
   "detail.confirmRebuild": "Rebuild this container? This will rebuild the image and recreate the container.",
+  "detail.confirmRecreate": "Recreate this container? Reuses the existing image and applies current compose config.",
 
   // Detail panel - Crash
   "detail.containerCrashed": "Container crashed",
@@ -249,15 +273,38 @@ const es: Record<TranslationKey, string> = {
   "login.errorConnectionRefused": "Conexi\u00f3n rechazada",
   "login.errorConnectionFailed": "ERROR: Conexi\u00f3n fallida",
 
-  // Context menu
-  "actions.restart": "Reiniciar",
-  "actions.stop": "Detener",
-  "actions.start": "Iniciar",
-  "actions.remove": "Eliminar",
-  "actions.rebuild": "Reconstruir",
+  // Context menu — labels stay in English (match docker commands, evita confusion)
+  "actions.restart": "Restart",
+  "actions.stop": "Stop",
+  "actions.start": "Start",
+  "actions.remove": "Remove",
+  "actions.rebuild": "Rebuild",
+  "actions.recreate": "Recreate",
   "actions.openLogs": "Ver Logs",
   "actions.open": "Abrir",
-  "actions.retry": "Reintentar",
+  "actions.retry": "Retry",
+
+  // Action tooltips (hover descriptions)
+  "actions.start.tooltip": "Inicia el contenedor (docker start)",
+  "actions.stop.tooltip": "Detiene el contenedor con SIGTERM, luego SIGKILL tras el timeout (docker stop)",
+  "actions.restart.tooltip": "Detiene y vuelve a iniciar el mismo contenedor (docker restart). Mantiene imagen y configuración.",
+  "actions.rebuild.tooltip": "Reconstruye la imagen desde el Dockerfile y crea un contenedor nuevo (docker compose up --build). Para aplicar cambios de código.",
+  "actions.recreate.tooltip": "Recrea el contenedor con la config actual del compose, reusando la imagen existente (docker compose up --force-recreate). Para aplicar cambios de compose sin rebuild.",
+  "actions.remove.tooltip": "Detiene y elimina el contenedor permanentemente (docker rm). Para servicios compose, también limpia networks asociadas.",
+  "actions.retry.tooltip": "Reintenta arrancar un contenedor que crasheó",
+
+  // Action error toast
+  "toast.actionFailed": "Error en {action}",
+  "toast.dismiss": "Descartar",
+  "toast.dismissAll": "Descartar todos",
+  "toast.copy": "Copiar",
+  "toast.copied": "Copiado",
+  "toast.expand": "Ver más",
+  "toast.collapse": "Ver menos",
+
+  // Access control (ALLOWED_PATHS)
+  "access.viewOnly": "Solo lectura",
+  "access.restricted": "Fuera de ALLOWED_PATHS — acciones deshabilitadas",
 
   // Edge legend
   "legend.connections": "Conexiones",
@@ -355,6 +402,7 @@ const es: Record<TranslationKey, string> = {
   "detail.confirmRestart": "\u00bfReiniciar este contenedor? Esto interrumpir\u00e1 brevemente el servicio.",
   "detail.confirmRemove": "\u00bfEliminar este contenedor? Esto lo detendr\u00e1 y eliminar\u00e1.",
   "detail.confirmRebuild": "\u00bfReconstruir este contenedor? Esto reconstruir\u00e1 la imagen y recrear\u00e1 el contenedor.",
+  "detail.confirmRecreate": "\u00bfRecrear este contenedor? Reusa la imagen existente y aplica la config actual del compose.",
 
   // Detail panel - Crash
   "detail.containerCrashed": "Contenedor crash\u00f3",
