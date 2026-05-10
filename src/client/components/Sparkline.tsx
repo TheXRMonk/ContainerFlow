@@ -68,6 +68,28 @@ export function Sparkline({
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, w, h);
 
+    // Clip canvas drawing to a rounded rectangle matching the `rounded-lg`
+    // (8px radius) of the parent wrapper. This is more robust than relying
+    // on CSS overflow:hidden alone — guarantees no fill/stroke leaks past
+    // the rounded shape due to subpixel/anti-aliasing artifacts.
+    const RADIUS = 8;
+    ctx.beginPath();
+    if (typeof (ctx as any).roundRect === "function") {
+      (ctx as any).roundRect(0, 0, w, h, RADIUS);
+    } else {
+      // Fallback for older browsers
+      ctx.moveTo(RADIUS, 0);
+      ctx.lineTo(w - RADIUS, 0);
+      ctx.quadraticCurveTo(w, 0, w, RADIUS);
+      ctx.lineTo(w, h - RADIUS);
+      ctx.quadraticCurveTo(w, h, w - RADIUS, h);
+      ctx.lineTo(RADIUS, h);
+      ctx.quadraticCurveTo(0, h, 0, h - RADIUS);
+      ctx.lineTo(0, RADIUS);
+      ctx.quadraticCurveTo(0, 0, RADIUS, 0);
+    }
+    ctx.clip();
+
     if (data.length === 0) {
       ctx.fillStyle = "#64748b";
       ctx.font = "11px sans-serif";
@@ -79,7 +101,16 @@ export function Sparkline({
     const plotW = w - PAD.left - PAD.right;
     const plotH = h - PAD.top - PAD.bottom;
     const avg = data.reduce((a, b) => a + b, 0) / data.length;
-    const max = Math.max(...data, threshold ?? 0, avg, 1);
+
+    // Auto-scale Y to data range with 30% headroom for visual breathing room.
+    // Floor at 0.1 (not 1) so values like 0.1% don't get pancaked against the bottom.
+    // Threshold is included in the scale ONLY when data is reasonably close to it
+    // (≥30% of threshold); otherwise low values would get pancaked at the bottom.
+    const dataMax = Math.max(...data);
+    let max = Math.max(dataMax * 1.3, 0.1);
+    if (threshold !== undefined && threshold > 0 && dataMax >= threshold * 0.3) {
+      max = Math.max(max, threshold * 1.1);
+    }
     const range = max || 1;
     const xStep = data.length > 1 ? plotW / (data.length - 1) : plotW;
 
@@ -302,7 +333,7 @@ export function Sparkline({
           ref={canvasRef}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
-          className="cursor-crosshair"
+          className="cursor-crosshair block"
         />
       </div>
       {/* Tooltip — below the chart */}

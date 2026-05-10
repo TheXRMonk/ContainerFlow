@@ -6,10 +6,11 @@ import path from "path";
 import fs from "fs";
 import { docker, discoverServices, discoverConnections, getContainerLogs, streamContainerLogs } from "./docker";
 import { pollStats, watchDockerEvents } from "./watcher";
-import { loadDiscordConfig, saveDiscordConfig, notifyStateChange, notifyResourceAlert, notifyUIAction, notifyActionError, testWebhook, checkDownServices } from "./discord";
+import { loadDiscordConfig, saveDiscordConfig, notifyStateChange, notifyResourceAlert, notifyUIAction, notifyActionError, testWebhook, checkDownServices, setNotificationListener } from "./discord";
 import { loadContainerSettings, saveContainerSettings } from "./container-settings";
 import { initStatsDB, insertStats, getStatsHistory, getAllServicesStatsHistory } from "./stats-db";
-import type { Service, WSMessage, DiscordConfig, ContainerSettings, StatsRange } from "../shared/types";
+import { initEventsDB, insertEvent, insertNotification, getEvents, getNotifications, type EventLogEntry, type NotificationLogEntry } from "./events-db";
+import type { Service, Stats, WSMessage, DiscordConfig, ContainerSettings, StatsRange } from "../shared/types";
 
 /** Directory for persistent data files (SQLite, JSON configs, positions).
  *  Default: ./data subdirectory of cwd. Override via DATA_DIR env var. */
@@ -197,7 +198,11 @@ app.get("/api/init", async (c) => {
       positions = JSON.parse(fs.readFileSync(POSITIONS_FILE, "utf-8"));
     }
   } catch {}
-  return c.json({ services, connections, positions });
+  // Return cached stats (may be empty briefly during cold start).
+  // We deliberately do NOT trigger a fresh pollStats here — on cold start
+  // with many containers it can exceed Bun's 10s request timeout and hang
+  // the dashboard. The first regular poll (within ~3s) populates via WS.
+  return c.json({ services, connections, positions, stats: lastStats });
 });
 
 // ── Server config (read by frontend to disable buttons for non-allowed paths) ──
@@ -626,6 +631,23 @@ app.get("/api/stats/history", (c) => {
   return c.json(getAllServicesStatsHistory(range));
 });
 
+// ── Events + Notifications log ──
+app.get("/api/events", (c) => {
+  const limit = parseInt(c.req.query("limit") || "200");
+  const service = c.req.query("service") || undefined;
+  const action = c.req.query("action") || undefined;
+  const since = c.req.query("since") ? parseInt(c.req.query("since")!) : undefined;
+  return c.json(getEvents({ limit, service, action, since }));
+});
+
+app.get("/api/notifications", (c) => {
+  const limit = parseInt(c.req.query("limit") || "100");
+  const type = c.req.query("type") || undefined;
+  const level = c.req.query("level") || undefined;
+  const since = c.req.query("since") ? parseInt(c.req.query("since")!) : undefined;
+  return c.json(getNotifications({ limit, type, level, since }));
+});
+
 // ── Cache headers for static assets ──
 app.use("/*", async (c, next) => {
   await next();
@@ -714,6 +736,7 @@ async function refreshStats(services: Service[]) {
   statsLockTimer = setTimeout(() => { statsLock = false; }, 30000);
   try {
     const stats = await pollStats(services);
+    lastStats = stats; // cache for /api/init (avoid 3s wait on page load)
     broadcast({ type: "stats", data: stats });
     try { insertStats(stats); } catch {}
     // Check resource thresholds and down services for Discord alerts
@@ -768,9 +791,22 @@ function immediateRefresh() {
   refreshServices();
 }
 
+// Actions worth persisting in the events log. `stop` is intentionally excluded
+// — Docker emits BOTH `stop` (command issued) and `die` (process terminated)
+// when stopping a container, which results in duplicate entries. `die` always
+// fires when a container exits (intentional stop or crash), so it covers both.
+const PERSISTED_ACTIONS = new Set(["start", "die", "restart", "health_status"]);
+
 watchDockerEvents((event) => {
   broadcast({ type: "docker_event", data: event });
   scheduleRefresh();
+  // Persist to events log only if action is meaningful + non-duplicate
+  if (PERSISTED_ACTIONS.has(event.action)) {
+    try {
+      const entry = insertEvent(event.service, event.action, "docker");
+      if (entry) broadcast({ type: "event_log", data: entry } as any);
+    } catch {}
+  }
   try {
     const config = loadDiscordConfig();
     notifyStateChange(event.service, event.action, config);
@@ -780,11 +816,20 @@ watchDockerEvents((event) => {
 // ── Stats polling ──
 let lastServicesHash = "";
 let lastConnectionsHash = "";
+/** Last stats snapshot — sent in /api/init so frontend has data immediately
+ *  instead of waiting for the next polling cycle (~3s wait). */
+let lastStats: Stats[] = [];
 
 setInterval(refreshServices, POLL_INTERVAL_MS);
 
-// ── Init stats DB ──
+// ── Init persistent DBs ──
 initStatsDB();
+initEventsDB();
+
+// Wire up notification listener so new notifications stream to UI via WebSocket
+setNotificationListener((entry) => {
+  try { broadcast({ type: "notification_log", data: entry } as any); } catch {}
+});
 
 // ── Start ──
 const server = Bun.serve({

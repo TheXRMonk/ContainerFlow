@@ -965,6 +965,7 @@ export function DetailPanel({ service, stats, logLines, token, closing, locked, 
                     limitLabel={t("detail.limit")}
                     thresholdTooltip={t("detail.thresholdTooltip")}
                     limitTooltip={t("detail.limitTooltip")}
+                    valueTooltip={stats.mem_breakdown ? formatMemTooltip(stats.mem_breakdown, t) : undefined}
                   />
                 </div>
 
@@ -1308,14 +1309,17 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
 
 
 
-function StatCard({ label, value, extra, color, limit, threshold, thresholdLabel, limitLabel, thresholdTooltip, limitTooltip }: { label: string; value: string; extra?: string; color: string; limit?: string; threshold?: string; thresholdLabel?: string; limitLabel?: string; thresholdTooltip?: string; limitTooltip?: string }) {
+function StatCard({ label, value, extra, color, limit, threshold, thresholdLabel, limitLabel, thresholdTooltip, limitTooltip, valueTooltip }: { label: string; value: string; extra?: string; color: string; limit?: string; threshold?: string; thresholdLabel?: string; limitLabel?: string; thresholdTooltip?: string; limitTooltip?: string; valueTooltip?: string }) {
   return (
     <div className="bg-slate-800/80 rounded-lg px-4 py-3">
-      <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">{label}</span>
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className="text-[11px] uppercase tracking-wider text-slate-500">{label}</span>
+        {valueTooltip && <Tooltip text={valueTooltip} size={11} width="w-72" placement="bottom" />}
+      </div>
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center gap-1.5">
           <span className={`text-xl font-mono font-semibold ${color}`}>{value}</span>
-          {extra && <span className="text-xs text-slate-500 ml-2">{extra}</span>}
+          {extra && <span className="text-xs text-slate-500">{extra}</span>}
         </div>
         {(threshold || limit) && (
           <div className="flex flex-col items-end gap-0.5">
@@ -1338,6 +1342,20 @@ function StatCard({ label, value, extra, color, limit, threshold, thresholdLabel
       </div>
     </div>
   );
+}
+
+function formatMemTooltip(b: NonNullable<Stats["mem_breakdown"]>, t: (k: any) => string): string {
+  const fmt = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${mb.toFixed(0)} MB`;
+  return [
+    `${t("detail.memBreakdown")}:`,
+    "",
+    `  ${t("detail.memAnon")}: ${fmt(b.anon_mb)}`,
+    `  ${t("detail.memCache")}: ${fmt(b.cache_mb)}`,
+    `  ${t("detail.memTotal")}: ${fmt(b.total_mb)}`,
+    `  ${t("detail.memLimit")}: ${fmt(b.limit_mb)}`,
+    "",
+    t("detail.memTooltipHint"),
+  ].join("\n");
 }
 
 function formatTimestamp(ts: string): string {

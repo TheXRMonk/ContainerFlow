@@ -1,10 +1,11 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { Activity, Play, Square, RotateCcw, AlertTriangle, BarChart3, ChevronDown, Check, Maximize2, Minimize2, Settings } from "lucide-react";
-import type { DockerEvent, StatsRange, Service, ContainerSettings, DiscordConfig } from "../../shared/types";
+import type { DockerEvent, StatsRange, Service, ContainerSettings, DiscordConfig, StatsHistoryPoint, EventLogEntry, NotificationLogEntry } from "../../shared/types";
 import { useT } from "../i18n";
-import { useAllStatsHistory } from "../hooks/useStatsHistory";
+import { useAllStatsHistory, useStatsHistory } from "../hooks/useStatsHistory";
 import { StatsCard } from "../components/StatsCard";
 import { ThresholdBar } from "../components/ThresholdBar";
+import { Tooltip } from "../components/Tooltip";
 import { guessIcon } from "../nodes/ServiceNode";
 
 function timeAgo(ts: number): string {
@@ -81,11 +82,14 @@ interface MonitoringPageProps {
   events: DockerEvent[];
   token: string;
   services: Service[];
+  eventLogStream: EventLogEntry[];
+  notificationStream: NotificationLogEntry[];
 }
 
-export function MonitoringPage({ events, token, services }: MonitoringPageProps) {
+export function MonitoringPage({ events, token, services, eventLogStream, notificationStream }: MonitoringPageProps) {
   const { t } = useT();
   const [statsRange, setStatsRange] = useState<StatsRange>("1h");
+  const [activeTab, setActiveTab] = useState<"history" | "events" | "notifications">("history");
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
   const [expandedService, setExpandedService] = useState<string | null>(null);
@@ -247,21 +251,34 @@ export function MonitoringPage({ events, token, services }: MonitoringPageProps)
         : `${selectedServices.size} ${t("footer.containers")}`;
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto p-6">
+    <div className="flex-1 min-h-0 mx-2 mt-1 mb-1 rounded-xl overflow-auto ring-1 ring-slate-700/60 p-6">
       <div>
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <Activity size={24} className="text-cyan-400" />
-            <div>
+            <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-white">{t("monitoring.title")}</h1>
-              <p className="text-sm text-slate-500">{t("monitoring.subtitle")}</p>
+              <Tooltip text={t("monitoring.titleTooltip")} size={14} placement="right" nowrap />
             </div>
           </div>
 
           {/* Filters */}
           {allServiceNames.length > 0 && (
             <div className="flex items-center gap-2">
+              {/* Clear filters — only when something is active */}
+              {(selectedProjects.size > 0 || selectedServices.size > 0) && (
+                <button
+                  onClick={() => {
+                    setSelectedProjects(new Set());
+                    setSelectedServices(new Set());
+                  }}
+                  className="text-slate-500 hover:text-slate-300 p-1.5 rounded-md hover:bg-slate-800/60 transition-colors"
+                  title={t("monitoring.clearFilters")}
+                >
+                  <RotateCcw size={14} />
+                </button>
+              )}
               {/* Project filter */}
               {allProjects.length > 1 && (
                 <FilterDropdown
@@ -271,7 +288,13 @@ export function MonitoringPage({ events, token, services }: MonitoringPageProps)
                   dropdownRef={projectRef}
                 >
                   <button
-                    onClick={() => { setSelectedProjects(new Set(allProjects)); }}
+                    onClick={() => {
+                      if (selectedProjects.size === allProjects.length) {
+                        setSelectedProjects(new Set());
+                      } else {
+                        setSelectedProjects(new Set(allProjects));
+                      }
+                    }}
                     className="flex items-center gap-2.5 w-full px-3.5 py-2 text-sm hover:bg-slate-700/60 transition-colors"
                   >
                     <div className={`w-4 h-4 rounded border flex items-center justify-center ${
@@ -310,7 +333,13 @@ export function MonitoringPage({ events, token, services }: MonitoringPageProps)
                 dropdownRef={serviceRef}
               >
                 <button
-                  onClick={() => { setSelectedServices(new Set(projectFilteredServices)); }}
+                  onClick={() => {
+                    if (selectedServices.size === projectFilteredServices.length && projectFilteredServices.length > 0) {
+                      setSelectedServices(new Set());
+                    } else {
+                      setSelectedServices(new Set(projectFilteredServices));
+                    }
+                  }}
                   className="flex items-center gap-2.5 w-full px-3.5 py-2 text-sm hover:bg-slate-700/60 transition-colors"
                 >
                   <div className={`w-4 h-4 rounded border flex items-center justify-center ${
@@ -345,7 +374,31 @@ export function MonitoringPage({ events, token, services }: MonitoringPageProps)
           )}
         </div>
 
+        {/* Tabs */}
+        <div className="flex items-center border-b border-slate-700/40 mb-4">
+          {([
+            { key: "history" as const, label: t("monitoring.tabHistory") },
+            { key: "events" as const, label: t("monitoring.tabEvents") },
+            { key: "notifications" as const, label: t("monitoring.tabNotifications") },
+          ]).map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex-1 py-2.5 text-sm font-medium relative transition-colors ${
+                  isActive ? "text-cyan-400" : "text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                {tab.label}
+                <span className={`absolute bottom-0 left-0 right-0 h-px bg-cyan-400 transition-transform duration-300 ease-out origin-center ${isActive ? "scale-x-100" : "scale-x-0"}`} />
+              </button>
+            );
+          })}
+        </div>
+
         {/* Resource Usage History */}
+        {activeTab === "history" && (
         <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl overflow-hidden mb-6">
           <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700/40">
             <div className="flex items-center gap-2">
@@ -388,205 +441,575 @@ export function MonitoringPage({ events, token, services }: MonitoringPageProps)
               {t("monitoring.noHistoryData")}
             </div>
           ) : (
-            <div className="divide-y divide-slate-700/40">
-              {historyServiceNames.map((svc) => {
-                const points = filteredHistory[svc] || [];
-                const shortName = svc.split("/").pop() || svc;
-                const cs = containerSettings[svc];
-                const svcNotifs = discordEnabled && (cs?.notificationsEnabled !== false);
-                const cpuThreshold = svcNotifs ? (cs?.cpuThreshold ?? globalThresholds.cpu) : undefined;
-                const memThreshold = svcNotifs ? (cs?.memThreshold ?? globalThresholds.mem) : undefined;
-                const latest = points.length > 0 ? points[points.length - 1] : null;
-                const isExpanded = expandedService === svc;
-                const chartHeight = isExpanded ? 120 : 56;
-                const svcData = services.find((s) => s.uid === svc);
-                const cpuLimit = svcData && svcData.cpu_quota > 0 ? `${(svcData.cpu_quota / 1000).toFixed(0)}%` : undefined;
-                const memLimit = svcData && svcData.memory_limit > 0 ? `${(svcData.memory_limit / 1024 / 1024).toFixed(0)} MB` : undefined;
-                return (
-                  <div key={svc} className="px-5 py-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <ServiceIcon uid={svc} services={services} />
-                      <div className="min-w-0">
-                        <span className="text-xs text-slate-300 font-medium truncate block">{shortName}</span>
-                        {svc.includes("/") && (
-                          <span className="text-[10px] text-slate-500 truncate block leading-tight">{svc.split("/")[0]}</span>
-                        )}
-                      </div>
-                      <div className="flex-1" />
-                      {discordEnabled && (
-                        <button
-                          onClick={() => {
-                            const opening = configService !== svc;
-                            setConfigService(opening ? svc : null);
-                            if (opening) setExpandedService(svc);
-                            else setExpandedService(null);
-                          }}
-                          className={`p-1 rounded hover:bg-slate-700/60 transition-colors ${configService === svc ? "text-cyan-400" : "text-slate-500 hover:text-slate-300"}`}
-                          title={t("detail.config")}
-                        >
-                          <Settings size={14} />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setExpandedService(isExpanded ? null : svc)}
-                        className="p-1 rounded hover:bg-slate-700/60 text-slate-500 hover:text-slate-300 transition-colors"
-                        title={isExpanded ? "Collapse" : "Expand"}
-                      >
-                        {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-                      </button>
-                    </div>
-                    {/* Inline config panel */}
-                    {configService === svc && (() => {
-                      const settings = cs || { notificationsEnabled: true, cpuThreshold: null, memThreshold: null };
-                      const cpuTh = settings.cpuThreshold ?? globalThresholds.cpu;
-                      const memTh = settings.memThreshold ?? globalThresholds.mem;
-                      const cpuVal = latest?.cpu ?? 0;
-                      const memVal = latest?.mem_percent ?? 0;
-                      const memMb = latest?.mem_mb ?? 0;
-                      return (
-                        <div className="mb-2 bg-slate-900/90 border border-slate-700/40 rounded-lg px-4 py-3 space-y-3">
-                          {/* Notifications toggle */}
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-300">{t("detail.notifications")}</span>
-                            <button
-                              type="button"
-                              onClick={() => saveContainerSetting(svc, { ...settings, notificationsEnabled: !settings.notificationsEnabled })}
-                              className={`relative w-9 h-5 rounded-full transition-colors ${settings.notificationsEnabled ? "bg-cyan-600" : "bg-slate-600"}`}
-                            >
-                              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${settings.notificationsEnabled ? "translate-x-4" : "translate-x-0"}`} />
-                            </button>
-                          </div>
-                          {settings.notificationsEnabled && (
-                            <>
-                              <ThresholdBar
-                                label={t("detail.cpuUsage")}
-                                value={cpuVal}
-                                threshold={cpuTh}
-                                isCustom={settings.cpuThreshold !== null}
-                                showThreshold={true}
-                                thresholdLabel={t("detail.cpuThreshold")}
-                                tagLabel={settings.cpuThreshold !== null ? t("detail.custom") : t("detail.global")}
-                                hintLabel={t("detail.thresholdHint")}
-                                onThresholdChange={(v) => {
-                                  setContainerSettings((prev) => {
-                                    const cur = prev[svc] || { notificationsEnabled: true, cpuThreshold: null, memThreshold: null };
-                                    const updated = { ...cur, cpuThreshold: v };
-                                    debouncedSave(svc, updated);
-                                    return { ...prev, [svc]: updated };
-                                  });
-                                }}
-                                onReset={() => saveContainerSetting(svc, { ...(cs || { notificationsEnabled: true, cpuThreshold: null, memThreshold: null }), cpuThreshold: null })}
-                                formatValue={(v) => `${v.toFixed(1)}%`}
-                                baseColor="cyan"
-                              />
-                              <ThresholdBar
-                                label={t("detail.memoryUsage")}
-                                value={memVal}
-                                threshold={memTh}
-                                isCustom={settings.memThreshold !== null}
-                                showThreshold={true}
-                                thresholdLabel={t("detail.memThreshold")}
-                                tagLabel={settings.memThreshold !== null ? t("detail.custom") : t("detail.global")}
-                                hintLabel={t("detail.thresholdHint")}
-                                onThresholdChange={(v) => {
-                                  setContainerSettings((prev) => {
-                                    const cur = prev[svc] || { notificationsEnabled: true, cpuThreshold: null, memThreshold: null };
-                                    const updated = { ...cur, memThreshold: v };
-                                    debouncedSave(svc, updated);
-                                    return { ...prev, [svc]: updated };
-                                  });
-                                }}
-                                onReset={() => saveContainerSetting(svc, { ...(cs || { notificationsEnabled: true, cpuThreshold: null, memThreshold: null }), memThreshold: null })}
-                                formatValue={() => `${memMb.toFixed(0)} MB (${memVal.toFixed(1)}%)`}
-                                formatThreshold={svcData && svcData.memory_limit > 0 ? (th) => `${((th / 100) * svcData.memory_limit / 1024 / 1024).toFixed(0)} MB` : undefined}
-                                baseColor="purple"
-                              />
-                            </>
-                          )}
-                        </div>
-                      );
-                    })()}
-                    <div className={isExpanded ? "space-y-2" : "grid grid-cols-2 gap-2"}>
-                      <StatsCard
-                        label="CPU"
-                        value={latest ? `${latest.cpu.toFixed(1)}%` : "—"}
-                        limit={cpuLimit}
-                        data={points.map((p) => p.cpu)}
-                        timestamps={points.map((p) => p.timestamp)}
-                        hoverValues={points.map((p) => p.cpu)}
-                        color="#06b6d4"
-                        threshold={cpuThreshold}
-                        sparklineHeight={chartHeight}
-                        formatHoverValue={(v) => `${v.toFixed(2)}%`}
-                        showAverage
-                        formatAverage={(v) => `${v.toFixed(2)}%`}
-                        avgLabel={t("detail.avg")}
-                      />
-                      <StatsCard
-                        label="MEM"
-                        value={latest ? `${latest.mem_mb.toFixed(0)} MB` : "—"}
-                        limit={memLimit}
-                        data={points.map((p) => p.mem_percent)}
-                        timestamps={points.map((p) => p.timestamp)}
-                        hoverValues={points.map((p) => p.mem_mb)}
-                        color="#a78bfa"
-                        threshold={memThreshold}
-                        sparklineHeight={chartHeight}
-                        formatHoverValue={(v) => `${v.toFixed(0)} MB`}
-                        showAverage
-                        formatAverage={(v) => `${v.toFixed(0)} MB`}
-                        avgLabel={t("detail.avg")}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Events list */}
-        <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl overflow-hidden">
-          {filteredEvents.length === 0 ? (
-            <div className="px-6 py-12 text-center text-slate-500">
-              <Activity size={32} className="mx-auto mb-3 opacity-40" />
-              <p>{t("monitoring.noEvents")}</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-700/40">
-              {filteredEvents.map((ev, i) => (
-                <div key={`${ev.service}-${ev.time}-${i}`} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-700/30 transition-colors">
-                  <div className="w-8 h-8 rounded-lg bg-slate-700/60 flex items-center justify-center flex-shrink-0">
-                    {eventIcon(ev.action)}
-                  </div>
-                  <ServiceIcon uid={ev.service} services={services} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-sm text-slate-200 font-medium truncate">
-                        {ev.service.split("/").pop() || ev.service}
-                      </span>
-                      {ev.service.includes("/") && (
-                        <span className="text-[10px] text-slate-500 truncate">
-                          {ev.service.split("/")[0]}
-                        </span>
-                      )}
-                    </div>
-                    <span className={`text-xs font-mono ${actionColor(ev.action)}`}>{ev.action}</span>
-                  </div>
-                  <span className="text-xs text-slate-500 font-mono flex-shrink-0">{timeAgo(ev.time)}</span>
-                </div>
+            <>
+              <MonitoringTotalsCard
+                historyByService={filteredHistory}
+                services={services}
+                filteredUids={finalFilteredServices}
+                title={
+                  selectedServices.size > 0
+                    ? (selectedServices.size === 1
+                        ? ([...selectedServices][0].split("/").pop() || [...selectedServices][0])
+                        : `${selectedServices.size} ${t("footer.containers")}`)
+                    : selectedProjects.size === 1
+                      ? [...selectedProjects][0]
+                      : selectedProjects.size === allProjects.length
+                        ? t("monitoring.allProjects")
+                        : `${selectedProjects.size} ${t("filter.projects").toLowerCase()}`
+                }
+              />
+              <div className="divide-y divide-slate-700/40">
+              {historyServiceNames.map((svc) => (
+                <MonitoringServiceCard
+                  key={svc}
+                  svc={svc}
+                  services={services}
+                  containerSettings={containerSettings}
+                  setContainerSettings={setContainerSettings}
+                  globalThresholds={globalThresholds}
+                  discordEnabled={discordEnabled}
+                  configService={configService}
+                  setConfigService={setConfigService}
+                  expandedService={expandedService}
+                  setExpandedService={setExpandedService}
+                  saveContainerSetting={saveContainerSetting}
+                  debouncedSave={debouncedSave}
+                  globalRange={statsRange}
+                  fallbackData={filteredHistory[svc] || []}
+                  token={token}
+                />
               ))}
-            </div>
+              </div>
+            </>
           )}
         </div>
+        )}
 
-        {/* Alert Rules placeholder */}
-        <div className="mt-8 bg-slate-800/30 border border-dashed border-slate-700/60 rounded-xl p-6 text-center">
-          <AlertTriangle size={24} className="mx-auto mb-2 text-slate-600" />
-          <p className="text-sm text-slate-500 font-medium">{t("monitoring.alertRules")}</p>
-          <p className="text-xs text-slate-600 mt-1">{t("monitoring.alertRulesDesc")}</p>
-        </div>
+        {/* Events log (persistent, from SQLite) */}
+        {activeTab === "events" && (
+          <EventsLogTab
+            token={token}
+            services={services}
+            liveStream={eventLogStream}
+            filteredUids={finalFilteredServices}
+            hasActiveFilter={hasActiveFilter}
+          />
+        )}
+
+        {/* Notifications log (persistent, mirrors Discord) */}
+        {activeTab === "notifications" && (
+          <NotificationsLogTab
+            token={token}
+            services={services}
+            liveStream={notificationStream}
+            filteredUids={finalFilteredServices}
+            hasActiveFilter={hasActiveFilter}
+          />
+        )}
       </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Aggregated totals card — sum of CPU% and memory across all filtered services
+// ──────────────────────────────────────────────────────────────────────────────
+
+function MonitoringTotalsCard({
+  historyByService,
+  services,
+  filteredUids,
+  title,
+}: {
+  historyByService: Record<string, StatsHistoryPoint[]>;
+  services: Service[];
+  filteredUids: Set<string>;
+  title: string;
+}) {
+  const { t } = useT();
+
+  // Aggregate per-timestamp totals across all filtered services.
+  // CPU: sum of per-container CPU% (can exceed 100% on multi-core hosts — informative).
+  // MEM: sum of per-container mem_mb (absolute memory usage).
+  const totals = useMemo(() => {
+    const buckets = new Map<number, { cpu: number; mem_mb: number }>();
+    for (const [svc, points] of Object.entries(historyByService)) {
+      if (!filteredUids.has(svc)) continue;
+      for (const p of points) {
+        const existing = buckets.get(p.timestamp);
+        if (existing) {
+          existing.cpu += p.cpu;
+          existing.mem_mb += p.mem_mb;
+        } else {
+          buckets.set(p.timestamp, { cpu: p.cpu, mem_mb: p.mem_mb });
+        }
+      }
+    }
+    return [...buckets.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([ts, v]) => ({ timestamp: ts, cpu: v.cpu, mem_mb: v.mem_mb }));
+  }, [historyByService, filteredUids]);
+
+  // Sum container memory limits for the "X / Y" display
+  const totalMemLimitMb = useMemo(() => {
+    let sum = 0;
+    for (const s of services) {
+      if (!filteredUids.has(s.uid)) continue;
+      if (s.memory_limit > 0) sum += s.memory_limit / 1024 / 1024;
+    }
+    return sum;
+  }, [services, filteredUids]);
+
+  // Hide totals card if it would be redundant with the single service card below
+  if (totals.length === 0) return null;
+  if (filteredUids.size <= 1) return null;
+
+  const latest = totals[totals.length - 1];
+  const cpuValue = `${latest.cpu.toFixed(1)}%`;
+  const memValue = latest.mem_mb >= 1024
+    ? `${(latest.mem_mb / 1024).toFixed(2)} GB`
+    : `${latest.mem_mb.toFixed(0)} MB`;
+  const memLimit = totalMemLimitMb > 0
+    ? (totalMemLimitMb >= 1024 ? `${(totalMemLimitMb / 1024).toFixed(1)} GB` : `${totalMemLimitMb.toFixed(0)} MB`)
+    : undefined;
+  const formatMem = (v: number) => v >= 1024 ? `${(v / 1024).toFixed(2)} GB` : `${v.toFixed(0)} MB`;
+  const containerCount = filteredUids.size;
+
+  return (
+    <div className="px-5 py-3 border-b border-slate-700/40 bg-slate-900/40">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs text-slate-300 font-medium truncate">{title}</span>
+        <span className="text-[10px] text-slate-500">· {containerCount} {t("footer.containers")}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <StatsCard
+          label={t("monitoring.totalCpu")}
+          value={cpuValue}
+          data={totals.map((p) => p.cpu)}
+          timestamps={totals.map((p) => p.timestamp)}
+          hoverValues={totals.map((p) => p.cpu)}
+          color="#10b981"
+          sparklineHeight={56}
+          formatHoverValue={(v) => `${v.toFixed(1)}%`}
+          showAverage
+          formatAverage={(v) => `${v.toFixed(1)}%`}
+          avgLabel={t("detail.avg")}
+        />
+        <StatsCard
+          label={t("monitoring.totalMem")}
+          value={memValue}
+          limit={memLimit}
+          data={totals.map((p) => p.mem_mb)}
+          timestamps={totals.map((p) => p.timestamp)}
+          hoverValues={totals.map((p) => p.mem_mb)}
+          color="#10b981"
+          sparklineHeight={56}
+          formatHoverValue={formatMem}
+          showAverage
+          formatAverage={formatMem}
+          avgLabel={t("detail.avg")}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Per-service card with its own range override
+// ──────────────────────────────────────────────────────────────────────────────
+
+interface MonitoringServiceCardProps {
+  svc: string;
+  services: Service[];
+  containerSettings: Record<string, ContainerSettings>;
+  setContainerSettings: React.Dispatch<React.SetStateAction<Record<string, ContainerSettings>>>;
+  globalThresholds: { cpu: number; mem: number };
+  discordEnabled: boolean;
+  configService: string | null;
+  setConfigService: React.Dispatch<React.SetStateAction<string | null>>;
+  expandedService: string | null;
+  setExpandedService: React.Dispatch<React.SetStateAction<string | null>>;
+  saveContainerSetting: (uid: string, settings: ContainerSettings) => Promise<void>;
+  debouncedSave: (uid: string, settings: ContainerSettings) => void;
+  globalRange: StatsRange;
+  fallbackData: StatsHistoryPoint[];
+  token: string;
+}
+
+function MonitoringServiceCard({
+  svc,
+  services,
+  containerSettings,
+  setContainerSettings,
+  globalThresholds,
+  discordEnabled,
+  configService,
+  setConfigService,
+  expandedService,
+  setExpandedService,
+  saveContainerSetting,
+  debouncedSave,
+  globalRange,
+  fallbackData,
+  token,
+}: MonitoringServiceCardProps) {
+  const { t } = useT();
+  const [localRange, setLocalRange] = useState<StatsRange | null>(null);
+
+  // When the global range changes, reset this card's local override so it
+  // follows the new global. User clicking the global filter expresses intent
+  // "show all at this range".
+  useEffect(() => {
+    setLocalRange(null);
+  }, [globalRange]);
+
+  const hasOverride = localRange !== null;
+  const effectiveRange = localRange ?? globalRange;
+  // Only fetch when overridden — otherwise the page's useAllStatsHistory covers it.
+  const { data: ownData, loading: ownLoading } = useStatsHistory(svc, effectiveRange, token, hasOverride);
+
+  const points = hasOverride ? ownData : fallbackData;
+  const loading = hasOverride ? ownLoading : false;
+
+  const shortName = svc.split("/").pop() || svc;
+  const cs = containerSettings[svc];
+  const svcNotifs = discordEnabled && (cs?.notificationsEnabled !== false);
+  const cpuThreshold = svcNotifs ? (cs?.cpuThreshold ?? globalThresholds.cpu) : undefined;
+  const memThreshold = svcNotifs ? (cs?.memThreshold ?? globalThresholds.mem) : undefined;
+  const latest = points.length > 0 ? points[points.length - 1] : null;
+  const isExpanded = expandedService === svc;
+  const chartHeight = isExpanded ? 120 : 56;
+  const svcData = services.find((s) => s.uid === svc);
+  const cpuLimit = svcData && svcData.cpu_quota > 0 ? `${(svcData.cpu_quota / 1000).toFixed(0)}%` : undefined;
+  const memLimit = svcData && svcData.memory_limit > 0 ? `${(svcData.memory_limit / 1024 / 1024).toFixed(0)} MB` : undefined;
+
+  return (
+    <div className="px-5 py-3">
+      <div className="flex items-center gap-2 mb-2">
+        <ServiceIcon uid={svc} services={services} />
+        <div className="min-w-0">
+          <span className="text-xs text-slate-300 font-medium truncate block">{shortName}</span>
+          {svc.includes("/") && (
+            <span className="text-[10px] text-slate-500 truncate block leading-tight">{svc.split("/")[0]}</span>
+          )}
+        </div>
+        <div className="flex-1" />
+        {/* Per-card range buttons */}
+        <div className="flex gap-0.5 mr-1">
+          {(["1h", "6h", "24h", "7d"] as StatsRange[]).map((r) => {
+            const active = effectiveRange === r;
+            const isOverrideHighlight = active && hasOverride;
+            return (
+              <button
+                key={r}
+                onClick={() => setLocalRange(r === globalRange ? null : r)}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                  active
+                    ? isOverrideHighlight
+                      ? "bg-purple-500/20 text-purple-300"
+                      : "bg-cyan-500/20 text-cyan-300"
+                    : "text-slate-500 hover:text-slate-300 hover:bg-slate-700"
+                }`}
+                title={isOverrideHighlight ? "Override (click on the matching global range to reset)" : undefined}
+              >
+                {r}
+              </button>
+            );
+          })}
+        </div>
+        {discordEnabled && (
+          <button
+            onClick={() => {
+              const opening = configService !== svc;
+              setConfigService(opening ? svc : null);
+              if (opening) setExpandedService(svc);
+              else setExpandedService(null);
+            }}
+            className={`p-1 rounded hover:bg-slate-700/60 transition-colors ${configService === svc ? "text-cyan-400" : "text-slate-500 hover:text-slate-300"}`}
+            title={t("detail.config")}
+          >
+            <Settings size={14} />
+          </button>
+        )}
+        <button
+          onClick={() => setExpandedService(isExpanded ? null : svc)}
+          className="p-1 rounded hover:bg-slate-700/60 text-slate-500 hover:text-slate-300 transition-colors"
+          title={isExpanded ? "Collapse" : "Expand"}
+        >
+          {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </button>
+      </div>
+      {/* Inline config panel */}
+      {configService === svc && (() => {
+        const settings = cs || { notificationsEnabled: true, cpuThreshold: null, memThreshold: null };
+        const cpuTh = settings.cpuThreshold ?? globalThresholds.cpu;
+        const memTh = settings.memThreshold ?? globalThresholds.mem;
+        const cpuVal = latest?.cpu ?? 0;
+        const memVal = latest?.mem_percent ?? 0;
+        const memMb = latest?.mem_mb ?? 0;
+        return (
+          <div className="mb-2 bg-slate-900/90 border border-slate-700/40 rounded-lg px-4 py-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-300">{t("detail.notifications")}</span>
+              <button
+                type="button"
+                onClick={() => saveContainerSetting(svc, { ...settings, notificationsEnabled: !settings.notificationsEnabled })}
+                className={`relative w-9 h-5 rounded-full transition-colors ${settings.notificationsEnabled ? "bg-cyan-600" : "bg-slate-600"}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${settings.notificationsEnabled ? "translate-x-4" : "translate-x-0"}`} />
+              </button>
+            </div>
+            {settings.notificationsEnabled && (
+              <>
+                <ThresholdBar
+                  label={t("detail.cpuUsage")}
+                  value={cpuVal}
+                  threshold={cpuTh}
+                  isCustom={settings.cpuThreshold !== null}
+                  showThreshold={true}
+                  thresholdLabel={t("detail.cpuThreshold")}
+                  tagLabel={settings.cpuThreshold !== null ? t("detail.custom") : t("detail.global")}
+                  hintLabel={t("detail.thresholdHint")}
+                  onThresholdChange={(v) => {
+                    setContainerSettings((prev) => {
+                      const cur = prev[svc] || { notificationsEnabled: true, cpuThreshold: null, memThreshold: null };
+                      const updated = { ...cur, cpuThreshold: v };
+                      debouncedSave(svc, updated);
+                      return { ...prev, [svc]: updated };
+                    });
+                  }}
+                  onReset={() => saveContainerSetting(svc, { ...(cs || { notificationsEnabled: true, cpuThreshold: null, memThreshold: null }), cpuThreshold: null })}
+                  formatValue={(v) => `${v.toFixed(1)}%`}
+                  baseColor="cyan"
+                />
+                <ThresholdBar
+                  label={t("detail.memoryUsage")}
+                  value={memVal}
+                  threshold={memTh}
+                  isCustom={settings.memThreshold !== null}
+                  showThreshold={true}
+                  thresholdLabel={t("detail.memThreshold")}
+                  tagLabel={settings.memThreshold !== null ? t("detail.custom") : t("detail.global")}
+                  hintLabel={t("detail.thresholdHint")}
+                  onThresholdChange={(v) => {
+                    setContainerSettings((prev) => {
+                      const cur = prev[svc] || { notificationsEnabled: true, cpuThreshold: null, memThreshold: null };
+                      const updated = { ...cur, memThreshold: v };
+                      debouncedSave(svc, updated);
+                      return { ...prev, [svc]: updated };
+                    });
+                  }}
+                  onReset={() => saveContainerSetting(svc, { ...(cs || { notificationsEnabled: true, cpuThreshold: null, memThreshold: null }), memThreshold: null })}
+                  formatValue={() => `${memMb.toFixed(0)} MB (${memVal.toFixed(1)}%)`}
+                  formatThreshold={svcData && svcData.memory_limit > 0 ? (th) => `${((th / 100) * svcData.memory_limit / 1024 / 1024).toFixed(0)} MB` : undefined}
+                  baseColor="purple"
+                />
+              </>
+            )}
+          </div>
+        );
+      })()}
+      {loading ? (
+        <div className="text-slate-500 text-[11px] text-center py-4">{t("monitoring.loadingHistory")}</div>
+      ) : (
+        <div className={isExpanded ? "space-y-2" : "grid grid-cols-2 gap-2"}>
+          <StatsCard
+            label="CPU"
+            value={latest ? `${latest.cpu.toFixed(1)}%` : "—"}
+            limit={cpuLimit}
+            data={points.map((p) => p.cpu)}
+            timestamps={points.map((p) => p.timestamp)}
+            hoverValues={points.map((p) => p.cpu)}
+            color="#06b6d4"
+            threshold={cpuThreshold}
+            sparklineHeight={chartHeight}
+            formatHoverValue={(v) => `${v.toFixed(2)}%`}
+            showAverage
+            formatAverage={(v) => `${v.toFixed(2)}%`}
+            avgLabel={t("detail.avg")}
+          />
+          <StatsCard
+            label="MEM"
+            value={latest ? `${latest.mem_mb.toFixed(0)} MB` : "—"}
+            limit={memLimit}
+            data={points.map((p) => p.mem_percent)}
+            timestamps={points.map((p) => p.timestamp)}
+            hoverValues={points.map((p) => p.mem_mb)}
+            color="#a78bfa"
+            threshold={memThreshold}
+            sparklineHeight={chartHeight}
+            formatHoverValue={(v) => `${v.toFixed(0)} MB`}
+            showAverage
+            formatAverage={(v) => `${v.toFixed(0)} MB`}
+            avgLabel={t("detail.avg")}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Events log tab — Docker events + UI actions, persistent in SQLite
+// ──────────────────────────────────────────────────────────────────────────────
+
+function EventsLogTab({ token, services, liveStream, filteredUids, hasActiveFilter }: { token: string; services: Service[]; liveStream: EventLogEntry[]; filteredUids: Set<string>; hasActiveFilter: boolean }) {
+  const { t } = useT();
+  const [events, setEvents] = useState<EventLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    fetch("/api/events?limit=200", { headers })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: EventLogEntry[]) => { setEvents(data); setLoading(false); })
+      .catch(() => { setEvents([]); setLoading(false); });
+  }, [token]);
+
+  // Merge live stream into events, dedupe by id, then apply monitoring filter
+  const allEvents = useMemo(() => {
+    const seen = new Set<number>();
+    const merged: EventLogEntry[] = [];
+    for (const e of [...liveStream, ...events]) {
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      if (hasActiveFilter && !filteredUids.has(e.service)) continue;
+      merged.push(e);
+    }
+    return merged;
+  }, [events, liveStream, filteredUids, hasActiveFilter]);
+
+  if (loading) {
+    return <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl px-6 py-12 text-center text-slate-500">{t("monitoring.loadingHistory")}</div>;
+  }
+
+  if (allEvents.length === 0) {
+    return (
+      <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl px-6 py-12 text-center text-slate-500">
+        <Activity size={32} className="mx-auto mb-3 opacity-40" />
+        <p>{t("monitoring.noEvents")}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl overflow-hidden">
+      <div className="divide-y divide-slate-700/40">
+        {allEvents.map((ev) => (
+          <div key={ev.id} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-700/30 transition-colors">
+            <div className="w-8 h-8 rounded-lg bg-slate-700/60 flex items-center justify-center flex-shrink-0">
+              {eventIcon(ev.action)}
+            </div>
+            <ServiceIcon uid={ev.service} services={services} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-sm text-slate-200 font-medium truncate">
+                  {ev.service.split("/").pop() || ev.service}
+                </span>
+                {ev.service.includes("/") && (
+                  <span className="text-[10px] text-slate-500 truncate">
+                    {ev.service.split("/")[0]}
+                  </span>
+                )}
+                <span className={`text-[9px] uppercase font-medium px-1.5 py-0.5 rounded ${ev.source === "ui" ? "bg-cyan-500/20 text-cyan-300" : "bg-slate-700/60 text-slate-400"}`}>
+                  {ev.source}
+                </span>
+              </div>
+              <span className={`text-xs font-mono ${actionColor(ev.action)}`}>{ev.action}</span>
+              {ev.error_msg && (
+                <pre className="mt-1 text-[10px] text-red-300 font-mono whitespace-pre-wrap break-words max-h-16 overflow-auto">{ev.error_msg}</pre>
+              )}
+            </div>
+            <span className="text-xs text-slate-500 font-mono flex-shrink-0">{timeAgo(ev.timestamp)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Notifications log tab — mirrors Discord webhooks, persistent in SQLite
+// ──────────────────────────────────────────────────────────────────────────────
+
+function levelStyles(level: NotificationLogEntry["level"]) {
+  switch (level) {
+    case "error": return { ring: "border-red-500/40", iconBg: "bg-red-500/15", iconColor: "text-red-400", titleColor: "text-red-300" };
+    case "warning": return { ring: "border-amber-500/40", iconBg: "bg-amber-500/15", iconColor: "text-amber-400", titleColor: "text-amber-300" };
+    case "info": return { ring: "border-slate-700/40", iconBg: "bg-slate-700/60", iconColor: "text-slate-400", titleColor: "text-slate-200" };
+  }
+}
+
+function NotificationsLogTab({ token, services, liveStream, filteredUids, hasActiveFilter }: { token: string; services: Service[]; liveStream: NotificationLogEntry[]; filteredUids: Set<string>; hasActiveFilter: boolean }) {
+  const { t } = useT();
+  const [notifications, setNotifications] = useState<NotificationLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    fetch("/api/notifications?limit=100", { headers })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: NotificationLogEntry[]) => { setNotifications(data); setLoading(false); })
+      .catch(() => { setNotifications([]); setLoading(false); });
+  }, [token]);
+
+  const allNotifs = useMemo(() => {
+    const seen = new Set<number>();
+    const merged: NotificationLogEntry[] = [];
+    for (const n of [...liveStream, ...notifications]) {
+      if (seen.has(n.id)) continue;
+      seen.add(n.id);
+      if (hasActiveFilter && !filteredUids.has(n.service)) continue;
+      merged.push(n);
+    }
+    return merged;
+  }, [notifications, liveStream, filteredUids, hasActiveFilter]);
+
+  if (loading) {
+    return <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl px-6 py-12 text-center text-slate-500">{t("monitoring.loadingHistory")}</div>;
+  }
+
+  if (allNotifs.length === 0) {
+    return (
+      <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl px-6 py-12 text-center text-slate-500">
+        <AlertTriangle size={32} className="mx-auto mb-3 opacity-40" />
+        <p className="text-sm">{t("monitoring.noNotifications")}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {allNotifs.map((n) => {
+        const s = levelStyles(n.level);
+        return (
+          <div key={n.id} className={`bg-slate-800/50 border ${s.ring} rounded-lg px-4 py-3`}>
+            <div className="flex items-start gap-3">
+              <div className={`w-7 h-7 rounded-lg ${s.iconBg} flex items-center justify-center shrink-0`}>
+                <AlertTriangle size={14} className={s.iconColor} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-sm font-semibold ${s.titleColor}`}>{n.title}</span>
+                  <span className="text-[10px] text-slate-500 font-mono">{n.type}</span>
+                  <span className="flex-1" />
+                  <span className="text-[10px] text-slate-500 font-mono">{timeAgo(n.timestamp)}</span>
+                </div>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <ServiceIcon uid={n.service} services={services} />
+                  <span className="text-xs text-slate-400 truncate">{n.service.split("/").pop() || n.service}</span>
+                  {n.service.includes("/") && <span className="text-[10px] text-slate-500">· {n.service.split("/")[0]}</span>}
+                </div>
+                <pre className="mt-1.5 text-xs text-slate-300 font-mono whitespace-pre-wrap break-words leading-relaxed">{n.message}</pre>
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

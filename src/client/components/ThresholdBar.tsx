@@ -65,11 +65,15 @@ export function ThresholdBar({ label, value, threshold, isCustom, showThreshold,
         className={`relative ${showThreshold ? "h-3" : "h-2"} bg-slate-800 rounded-full group ${showThreshold ? "cursor-pointer" : ""}`}
         onClick={(e) => { if (showThreshold && !dragging) onThresholdChange(calcPercent(e.clientX)); }}
       >
-        {/* Usage fill */}
-        <div
-          className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ${barColor}`}
-          style={{ width: `${Math.min(value, 100)}%` }}
-        />
+        {/* Clip wrapper — ensures the fill always respects the track's rounded shape,
+            even at very low values (otherwise rounded-full on the inner fill creates
+            a tiny pill that looks detached from the track edge). */}
+        <div className="absolute inset-0 rounded-full overflow-hidden">
+          <div
+            className={`absolute inset-y-0 left-0 transition-all duration-500 ${barColor}`}
+            style={{ width: `${Math.min(value, 100)}%` }}
+          />
+        </div>
         {/* Threshold handle — only when notifications enabled */}
         {showThreshold && (
           <div

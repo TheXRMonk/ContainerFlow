@@ -84,7 +84,7 @@ function Dashboard({ token }: { token: string }) {
   const onPositions = useCallback((pos: Record<string, { x: number; y: number }>) => {
     savedPositions.current = pos;
   }, []);
-  const { services, connections, stats, events, connected, logLines, sendMessage, clearLogLines, setProcessing, clearProcessing, getLogsSince, actionErrors, dismissActionError, clearActionErrors, pushActionError } = useDocker(token, statsStore, onPositions);
+  const { services, connections, stats, events, connected, logLines, sendMessage, clearLogLines, setProcessing, clearProcessing, getLogsSince, actionErrors, dismissActionError, clearActionErrors, pushActionError, eventLogStream, notificationStream } = useDocker(token, statsStore, onPositions);
   const { config: serverConfig, canInteract } = useServerConfig(token);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -522,7 +522,7 @@ function Dashboard({ token }: { token: string }) {
 
       <ActionErrorToast errors={actionErrors} onDismiss={dismissActionError} onClearAll={clearActionErrors} />
 
-      {activePage === "monitoring" && <MonitoringPage events={events} token={token} services={services} />}
+      {activePage === "monitoring" && <MonitoringPage events={events} token={token} services={services} eventLogStream={eventLogStream} notificationStream={notificationStream} />}
       {activePage === "settings" && <SettingsPage projects={projects} servicesCount={services.length} token={token} />}
 
       {/* Canvas — inset (only visible on dashboard) */}

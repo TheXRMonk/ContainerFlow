@@ -1,6 +1,13 @@
 import fs from "fs";
 import path from "path";
 import type { DiscordConfig } from "../shared/types";
+import { insertNotification, type NotificationLogEntry } from "./events-db";
+
+// External listener (set by index.ts) so we can broadcast new notifications via WS
+let onNotificationLogged: ((entry: NotificationLogEntry) => void) | null = null;
+export function setNotificationListener(fn: typeof onNotificationLogged) {
+  onNotificationLogged = fn;
+}
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const CONFIG_FILE = path.join(DATA_DIR, ".dockerflow-discord.json");
@@ -70,7 +77,7 @@ const downServices = new Map<string, number>(); // service → timestamp when it
  * for services that are still down after the cooldown period.
  */
 export function checkDownServices(config: DiscordConfig): void {
-  if (!config.enabled || !config.events.containerStateChanges) return;
+  if (!config.events.containerStateChanges) return;
   const now = Date.now();
   for (const [service, downSince] of downServices) {
     // Skip services that are still in debounce window (might be restarting)
@@ -79,19 +86,12 @@ export function checkDownServices(config: DiscordConfig): void {
     // Don't send "Still Down" for less than 1 minute
     if (downMinutes < 1) continue;
     const cooldownKey = `down:${service}`;
-    if (!isOnCooldown(cooldownKey, config.downReminderMinutes)) {
-      setCooldown(cooldownKey);
-      queueWebhook(config.webhookUrl, {
-        username: "ContainerFlow",
-        embeds: [{
-          title: "Container Still Down",
-          color: 0xef4444,
-          description: `**${service}**\n\nDown for: \`${downMinutes} min\`\nStatus: \`offline\``,
-          footer: { text: "ContainerFlow" },
-          timestamp: new Date().toISOString(),
-        }],
-      });
-    }
+    sendEmbed(config, {
+      title: "Container Still Down",
+      color: 0xef4444,
+      description: `**${service}**\n\nDown for: \`${downMinutes} min\`\nStatus: \`offline\``,
+      footer: { text: "ContainerFlow" },
+    }, cooldownKey, { type: "state_change", service });
   }
 }
 
@@ -138,10 +138,40 @@ function queueWebhook(url: string, body: any): Promise<void> {
   });
 }
 
-function sendEmbed(config: DiscordConfig, embed: any, cooldownKey?: string): void {
-  if (!config.enabled || !config.webhookUrl) return;
+/** Map embed color to notification level for in-app log */
+function colorToLevel(color: number): NotificationLogEntry["level"] {
+  if (color === 0xef4444) return "error";      // red
+  if (color === 0xf59e0b) return "warning";    // amber
+  if (color === 0x22c55e) return "info";       // green
+  if (color === 0x3b82f6) return "info";       // blue
+  return "info";
+}
+
+function sendEmbed(
+  config: DiscordConfig,
+  embed: any,
+  cooldownKey?: string,
+  meta?: { type: NotificationLogEntry["type"]; service: string },
+): void {
   if (cooldownKey && isOnCooldown(cooldownKey, config.cooldownMinutes)) return;
   if (cooldownKey) setCooldown(cooldownKey);
+
+  // Always log to in-app notifications (regardless of Discord webhook config)
+  if (meta) {
+    try {
+      const entry = insertNotification(
+        meta.type,
+        meta.service,
+        colorToLevel(embed.color),
+        embed.title || "Notification",
+        embed.description || "",
+      );
+      if (entry && onNotificationLogged) onNotificationLogged(entry);
+    } catch {}
+  }
+
+  // Send to Discord only if enabled + configured
+  if (!config.enabled || !config.webhookUrl) return;
   queueWebhook(config.webhookUrl, {
     username: "ContainerFlow",
     embeds: [{ ...embed, timestamp: new Date().toISOString() }],
@@ -175,7 +205,7 @@ function flushPendingDown(service: string): void {
     color: 0xef4444,
     description: `**${service}**\n\nAction: \`${action}\``,
     footer: { text: "ContainerFlow" },
-  }, cooldownKey);
+  }, cooldownKey, { type: "state_change", service });
 }
 
 function cancelPendingDown(service: string): void {
@@ -218,7 +248,7 @@ export function notifyStateChange(service: string, action: string, config: Disco
         color: 0xf59e0b,
         description: `**${service}**\n\nAction: \`redeployed\``,
         footer: { text: "ContainerFlow" },
-      }, cooldownKey);
+      }, cooldownKey, { type: "state_change", service });
     } else {
       // Fresh start (no preceding stop/die)
       const cooldownKey = `state:start:${service}`;
@@ -227,7 +257,7 @@ export function notifyStateChange(service: string, action: string, config: Disco
         color: 0x22c55e,
         description: `**${service}**\n\nAction: \`start\``,
         footer: { text: "ContainerFlow" },
-      }, cooldownKey);
+      }, cooldownKey, { type: "state_change", service });
     }
     return;
   }
@@ -247,7 +277,7 @@ export function notifyStateChange(service: string, action: string, config: Disco
     color: colors[action] || 0x94a3b8,
     description: `**${service}**\n\nAction: \`${action}\``,
     footer: { text: "ContainerFlow" },
-  }, cooldownKey);
+  }, cooldownKey, { type: "state_change", service });
 }
 
 export function notifyResourceAlert(service: string, resource: "cpu" | "memory", value: number, threshold: number, config: DiscordConfig): void {
@@ -259,7 +289,7 @@ export function notifyResourceAlert(service: string, resource: "cpu" | "memory",
     color,
     description: `**${service}**\n\nCurrent: \`${value.toFixed(1)}%\`\nThreshold: \`${threshold}%\``,
     footer: { text: "ContainerFlow" },
-  }, cooldownKey);
+  }, cooldownKey, { type: "resource_alert", service });
 }
 
 export function notifyUIAction(service: string, action: string, config: DiscordConfig): void {
@@ -270,7 +300,7 @@ export function notifyUIAction(service: string, action: string, config: DiscordC
     color: 0x3b82f6,
     description: `**${service}**\n\nAction: \`${action}\``,
     footer: { text: "ContainerFlow" },
-  }, cooldownKey);
+  }, cooldownKey, { type: "ui_action", service });
 }
 
 export function notifyActionError(service: string, action: string, error: string, config: DiscordConfig): void {
@@ -282,7 +312,7 @@ export function notifyActionError(service: string, action: string, error: string
     color: 0xef4444,
     description: `**${service}**\n\n\`\`\`\n${truncated}\n\`\`\``,
     footer: { text: "ContainerFlow" },
-  }, cooldownKey);
+  }, cooldownKey, { type: "action_error", service });
 }
 
 export async function testWebhook(webhookUrl: string): Promise<{ ok: boolean; error?: string }> {

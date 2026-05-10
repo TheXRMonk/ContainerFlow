@@ -42,7 +42,7 @@ export function StatsCard({
     <div className="flex items-center gap-3 bg-slate-800/60 border border-slate-700/40 rounded-lg px-3 py-2.5 overflow-visible">
       {/* Left: label + value + limit */}
       <div className="shrink-0 min-w-[52px]">
-        <span className="text-[10px] uppercase tracking-wider text-slate-500 block leading-tight">{label}</span>
+        <span className="text-[10px] uppercase tracking-wider text-slate-500 block leading-tight whitespace-pre-line">{label}</span>
         <span className="text-sm font-mono font-semibold block leading-tight mt-0.5" style={{ color }}>
           {value}
         </span>
@@ -53,7 +53,7 @@ export function StatsCard({
         )}
       </div>
       {/* Center: sparkline */}
-      <div className="flex-1 min-w-0 bg-slate-900/60 rounded-lg pt-1 overflow-visible">
+      <div className="flex-1 min-w-0 bg-slate-900/60 rounded-lg overflow-visible">
         <Sparkline
           data={data}
           timestamps={timestamps}

@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Activity, Settings, Bell,
   Play, Square, RotateCcw,
 } from "lucide-react";
-import type { Service, DockerEvent } from "../../shared/types";
+import type { Service, DockerEvent, NotificationLogEntry } from "../../shared/types";
 import { useT } from "../i18n";
 
 export type Page = "dashboard" | "monitoring" | "settings";

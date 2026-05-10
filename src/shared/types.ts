@@ -32,8 +32,22 @@ export interface Connection {
 export interface Stats {
   service: string;
   cpu: number;
+  /** Real memory usage in MB (usage minus reclaimable page cache).
+   *  Matches what `docker stats` CLI shows. */
   mem_mb: number;
+  /** Real memory usage as percentage of limit. */
   mem_percent: number;
+  /** Optional breakdown for tooltips (only present in live stats, not persisted). */
+  mem_breakdown?: {
+    /** Anonymous memory (process heap, stack) in MB */
+    anon_mb: number;
+    /** Reclaimable page cache in MB (inactive_file) */
+    cache_mb: number;
+    /** Total reserved including cache (raw memory_stats.usage) in MB */
+    total_mb: number;
+    /** Container memory limit in MB */
+    limit_mb: number;
+  };
 }
 
 export interface DockerEvent {
@@ -99,6 +113,25 @@ export interface ServerConfig {
   restrictedMode: boolean;
 }
 
+export interface EventLogEntry {
+  id: number;
+  timestamp: number;
+  service: string;
+  action: string;
+  source: "docker" | "ui";
+  error_msg: string | null;
+}
+
+export interface NotificationLogEntry {
+  id: number;
+  timestamp: number;
+  type: "state_change" | "resource_alert" | "ui_action" | "action_error";
+  service: string;
+  level: "info" | "warning" | "error";
+  title: string;
+  message: string;
+}
+
 export type WSMessage =
   | { type: "services"; data: Service[] }
   | { type: "connections"; data: Connection[] }
@@ -107,4 +140,6 @@ export type WSMessage =
   | { type: "subscribe_logs"; container: string }
   | { type: "unsubscribe_logs" }
   | { type: "log_line"; data: LogLine }
-  | { type: "action_error"; data: { uid: string; action: string; error: string } };
+  | { type: "action_error"; data: { uid: string; action: string; error: string } }
+  | { type: "event_log"; data: EventLogEntry }
+  | { type: "notification_log"; data: NotificationLogEntry };

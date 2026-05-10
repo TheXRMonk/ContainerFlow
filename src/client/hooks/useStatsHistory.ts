@@ -1,11 +1,16 @@
 import { useState, useEffect } from "react";
 import type { StatsHistoryPoint, StatsRange } from "../../shared/types";
 
-export function useStatsHistory(uid: string, range: StatsRange, token: string) {
+export function useStatsHistory(uid: string, range: StatsRange, token: string, enabled = true) {
   const [data, setData] = useState<StatsHistoryPoint[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!enabled) {
+      setData([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -20,7 +25,7 @@ export function useStatsHistory(uid: string, range: StatsRange, token: string) {
         setData([]);
         setLoading(false);
       });
-  }, [uid, range, token]);
+  }, [uid, range, token, enabled]);
 
   return { data, loading };
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { Service, Connection, Stats, DockerEvent, LogLine, WSMessage, ActionError } from "../../shared/types";
+import type { Service, Connection, Stats, DockerEvent, LogLine, WSMessage, ActionError, EventLogEntry, NotificationLogEntry } from "../../shared/types";
 import type { StatsStore } from "./useStatsStore";
 import { arraysEqual, applyProcessing as applyProcessingPure } from "./processing";
 
@@ -10,6 +10,8 @@ export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (po
   const [events, setEvents] = useState<DockerEvent[]>([]);
   const [logLines, setLogLines] = useState<LogLine[]>([]);
   const [actionErrors, setActionErrors] = useState<ActionError[]>([]);
+  const [eventLogStream, setEventLogStream] = useState<EventLogEntry[]>([]);
+  const [notificationStream, setNotificationStream] = useState<NotificationLogEntry[]>([]);
   // Processing state: uid → { expected state, start time, min duration before clearing }
   const processingRef = useRef<Map<string, { expected: Service["state"]; startedAt: number; minDuration: number }>>(new Map());
   const processingIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
@@ -35,6 +37,11 @@ export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (po
         setServices((prev) => prev.length === 0 ? data.services : prev);
         setConnections((prev) => prev.length === 0 ? data.connections : prev);
         if (onPositions) onPositions(data.positions || {});
+        // Hydrate stats immediately so charts/cards don't wait for next WS poll
+        if (Array.isArray(data.stats) && data.stats.length > 0) {
+          for (const s of data.stats as Stats[]) statsRef.current.set(s.service, s);
+          if (statsStore) statsStore.update(statsRef.current);
+        }
       })
       .catch(() => {});
   }, [token]);
@@ -131,6 +138,12 @@ export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (po
             ]);
             break;
           }
+          case "event_log":
+            setEventLogStream((prev) => [msg.data, ...prev].slice(0, 50));
+            break;
+          case "notification_log":
+            setNotificationStream((prev) => [msg.data, ...prev].slice(0, 50));
+            break;
         }
       } catch (err) {
         console.error("Failed to parse WS message:", err);
@@ -241,5 +254,5 @@ export function useDocker(token = "", statsStore?: StatsStore, onPositions?: (po
     ]);
   }, []);
 
-  return { services, connections, stats: statsRef.current, events, connected, logLines, sendMessage, clearLogLines, setProcessing, clearProcessing, getLogsSince, actionErrors, dismissActionError, clearActionErrors, pushActionError };
+  return { services, connections, stats: statsRef.current, events, connected, logLines, sendMessage, clearLogLines, setProcessing, clearProcessing, getLogsSince, actionErrors, dismissActionError, clearActionErrors, pushActionError, eventLogStream, notificationStream };
 }

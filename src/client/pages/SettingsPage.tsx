@@ -102,7 +102,7 @@ export function SettingsPage({ projects, servicesCount, token }: SettingsPagePro
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto p-6">
+    <div className="flex-1 min-h-0 mx-2 mt-1 mb-1 rounded-xl overflow-auto ring-1 ring-slate-700/60 p-6">
       <div>
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
