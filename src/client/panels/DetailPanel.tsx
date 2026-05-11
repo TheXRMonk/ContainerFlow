@@ -62,9 +62,12 @@ interface DetailPanelProps {
   envFiles: Record<string, string>;
   onEnvFileChange: (composeFile: string, envFile: string | null) => void;
   events: DockerEvent[];
+  /** Called when container settings change (thresholds, notifications toggle).
+   *  Lets the parent (App.tsx) update dashboard ServiceNode threshold coloring live. */
+  onContainerSettingsChange?: (uid: string, settings: ContainerSettings) => void;
 }
 
-export function DetailPanel({ service, stats, logLines, token, closing, locked, onClose, onAction, clearProcessing, pushActionError, sendMessage, clearLogLines, connections, services, getLogsSince, initialLogsFullscreen, initialTab, envFiles, onEnvFileChange, events }: DetailPanelProps) {
+export function DetailPanel({ service, stats, logLines, token, closing, locked, onClose, onAction, clearProcessing, pushActionError, sendMessage, clearLogLines, connections, services, getLogsSince, initialLogsFullscreen, initialTab, envFiles, onEnvFileChange, events, onContainerSettingsChange }: DetailPanelProps) {
   const { t } = useT();
   const [initialLogs, setInitialLogs] = useState<LogLine[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -145,11 +148,13 @@ export function DetailPanel({ service, stats, logLines, token, closing, locked, 
         });
         setCsSaved(true);
         setTimeout(() => setCsSaved(false), 1500);
+        // Notify parent so dashboard ServiceNode thresholds update live
+        onContainerSettingsChange?.(service.uid, containerSettings);
       } catch {}
       setCsSaving(false);
     }, 500);
     return () => clearTimeout(timer);
-  }, [containerSettings, csLoaded, service.uid, token]);
+  }, [containerSettings, csLoaded, service.uid, token, onContainerSettingsChange]);
 
   // Scroll modal to bottom when opened or when logs arrive
   useEffect(() => {

@@ -38,6 +38,8 @@ interface ServiceNodeData {
   activeHandles?: string[];
   highlighted?: boolean;
   locked?: boolean;
+  cpuThreshold?: number;
+  memThreshold?: number;
   [key: string]: unknown;
 }
 
@@ -221,13 +223,21 @@ export const ServiceNode = memo(function ServiceNode({ data, id }: NodeProps) {
           <div className="flex gap-1.5">
             <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
               <div
-                className="h-full bg-cyan-500/60 rounded-full transition-all duration-700"
+                className={`h-full rounded-full transition-all duration-700 ${
+                  d.cpuThreshold !== undefined && nodeStats.cpu > d.cpuThreshold
+                    ? "bg-amber-500/80"
+                    : "bg-cyan-500/60"
+                }`}
                 style={{ width: `${Math.min(nodeStats.cpu, 100)}%` }}
               />
             </div>
             <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
               <div
-                className="h-full bg-violet-500/60 rounded-full transition-all duration-700"
+                className={`h-full rounded-full transition-all duration-700 ${
+                  d.memThreshold !== undefined && nodeStats.mem_percent > d.memThreshold
+                    ? "bg-amber-500/80"
+                    : "bg-violet-500/60"
+                }`}
                 style={{ width: `${Math.min(nodeStats.mem_percent, 100)}%` }}
               />
             </div>

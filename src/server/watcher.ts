@@ -55,9 +55,11 @@ export function computeMemoryBreakdown(memoryStats: any): {
 
 export async function pollStats(services: Service[]): Promise<Stats[]> {
   const running = services.filter((s) => s.state === "running");
-  const results: Stats[] = [];
 
-  for (const svc of running) {
+  // Poll all containers in parallel — sequential polling makes the first cycle
+  // take ~3s × N containers, blocking the dashboard on page load. The Docker
+  // daemon handles concurrent stats requests fine.
+  const results = await Promise.all(running.map(async (svc): Promise<Stats | null> => {
     try {
       const container = docker.getContainer(svc.id);
       const raw = await Promise.race([
@@ -76,8 +78,6 @@ export async function pollStats(services: Service[]): Promise<Stats[]> {
           ? (cpuDelta / sysDelta) * onlineCpus * 100
           : 0;
 
-      // If container has a CPU limit, show % relative to its allocation
-      // cpu_quota: 100000 = 1 core; cpuHost: % of one host core
       const cpu = svc.cpu_quota > 0
         ? (cpuHost * 100000 / svc.cpu_quota)
         : cpuHost;
@@ -86,7 +86,7 @@ export async function pollStats(services: Service[]): Promise<Stats[]> {
       const memLimit = mb.limit || 1;
       const TO_MB = 1024 * 1024;
 
-      results.push({
+      return {
         service: svc.uid,
         cpu: parseFloat(cpu.toFixed(2)),
         mem_mb: parseFloat((mb.real / TO_MB).toFixed(1)),
@@ -97,13 +97,14 @@ export async function pollStats(services: Service[]): Promise<Stats[]> {
           total_mb: parseFloat((mb.total / TO_MB).toFixed(1)),
           limit_mb: parseFloat((mb.limit / TO_MB).toFixed(1)),
         },
-      });
+      };
     } catch {
-      // Container may have stopped between discovery and stats
+      // Container may have stopped between discovery and stats, or stats timed out
+      return null;
     }
-  }
+  }));
 
-  return results;
+  return results.filter((r): r is Stats => r !== null);
 }
 
 export function watchDockerEvents(onEvent: (event: DockerEvent) => void) {

@@ -138,6 +138,29 @@ function Dashboard({ token }: { token: string }) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; service: Service } | null>(null);
   const [envFiles, setEnvFiles] = useState<Record<string, string>>({});
 
+  // Thresholds (per-container settings + global Discord config). Used in
+  // dashboard ServiceNode to color progress bars amber when exceeded.
+  const [containerSettings, setContainerSettings] = useState<Record<string, { notificationsEnabled?: boolean; cpuThreshold?: number | null; memThreshold?: number | null }>>({});
+  const [globalThresholds, setGlobalThresholds] = useState<{ cpu: number; mem: number }>({ cpu: 50, mem: 60 });
+  const [discordEnabled, setDiscordEnabled] = useState(false);
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    fetch("/api/container-settings", { headers })
+      .then((r) => r.ok ? r.json() : {})
+      .then(setContainerSettings)
+      .catch(() => {});
+    fetch("/api/discord-config", { headers })
+      .then((r) => r.ok ? r.json() : null)
+      .then((c: any) => {
+        if (c) {
+          setGlobalThresholds({ cpu: c.thresholds?.cpuPercent ?? 50, mem: c.thresholds?.memPercent ?? 60 });
+          setDiscordEnabled(!!(c.enabled && c.webhookUrl));
+        }
+      })
+      .catch(() => {});
+  }, [token]);
+
   // Close filter dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -341,11 +364,17 @@ function Dashboard({ token }: { token: string }) {
 
     const { nodes: newNodes } = buildLayout(filteredServices, filteredConnections);
 
-    // Mark service nodes as locked when restricted mode is active
+    // Mark service nodes as locked + inject effective thresholds for progress bar coloring
     for (const n of newNodes) {
       if (n.type === "service") {
         const svc = filteredServices.find((s) => s.uid === n.id);
-        if (svc) (n.data as any).locked = !canInteract(svc);
+        if (svc) {
+          (n.data as any).locked = !canInteract(svc);
+          const cs = containerSettings[svc.uid];
+          const notifsOn = discordEnabled && (cs?.notificationsEnabled !== false);
+          (n.data as any).cpuThreshold = notifsOn ? (cs?.cpuThreshold ?? globalThresholds.cpu) : undefined;
+          (n.data as any).memThreshold = notifsOn ? (cs?.memThreshold ?? globalThresholds.mem) : undefined;
+        }
       }
     }
 
@@ -429,7 +458,7 @@ function Dashboard({ token }: { token: string }) {
         return result;
       });
     }
-  }, [filteredServices, filteredConnections, canInteract]);
+  }, [filteredServices, filteredConnections, canInteract, containerSettings, globalThresholds, discordEnabled]);
 
   // Recompute edges + handles on drag end (not every pixel)
   const recomputeEdges = useCallback((currentNodes: Node[]) => {
@@ -786,6 +815,7 @@ function Dashboard({ token }: { token: string }) {
             envFiles={envFiles}
             onEnvFileChange={handleEnvFileChange}
             events={events}
+            onContainerSettingsChange={(uid, settings) => setContainerSettings((prev) => ({ ...prev, [uid]: settings }))}
           />
         )}
       </div>
