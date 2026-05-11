@@ -82,6 +82,15 @@ export async function discoverServices(all: boolean, projects: string[]): Promis
       exit_code: exitCode,
       restart_count: restartCount,
       oom_killed: oomKilled,
+      mounts: (info?.Mounts || []).map((m: any) => ({
+        type: m.Type || "bind",
+        source: m.Source || "",
+        destination: m.Destination || "",
+        name: m.Name || undefined,
+        driver: m.Driver || undefined,
+        mode: m.Mode || "",
+        rw: m.RW !== false,
+      })),
     };
   });
 

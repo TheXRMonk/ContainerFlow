@@ -1,3 +1,20 @@
+export interface ContainerMount {
+  /** "bind" = host directory · "volume" = named docker volume · "tmpfs" = in-memory */
+  type: "bind" | "volume" | "tmpfs" | string;
+  /** Path on the host (or volume backend path) */
+  source: string;
+  /** Path inside the container */
+  destination: string;
+  /** Volume name (only for type=volume) */
+  name?: string;
+  /** Volume driver (only for type=volume) */
+  driver?: string;
+  /** Mode string, e.g. "rw", "ro", "rprivate" */
+  mode: string;
+  /** true = read-write, false = read-only */
+  rw: boolean;
+}
+
 export interface Service {
   id: string;
   uid: string;
@@ -19,6 +36,7 @@ export interface Service {
   exit_code: number;
   restart_count: number;
   oom_killed: boolean;
+  mounts: ContainerMount[];
 }
 
 export interface Connection {

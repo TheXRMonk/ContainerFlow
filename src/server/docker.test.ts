@@ -24,6 +24,7 @@ function makeSvc(overrides: Partial<Service> = {}): Service {
     exit_code: 0,
     restart_count: 0,
     oom_killed: false,
+    mounts: [],
     ...overrides,
   };
 }

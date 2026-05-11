@@ -723,6 +723,39 @@ export function DetailPanel({ service, stats, logLines, token, closing, locked, 
                 </div>
               )}
 
+              {/* Volumes / Mounts */}
+              {service.mounts && service.mounts.length > 0 && (
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider text-slate-500 block mb-1">{t("detail.mounts")}</span>
+                  <div className="space-y-1.5">
+                    {service.mounts.map((m, i) => {
+                      const typeColor = m.type === "volume" ? "text-emerald-400 bg-emerald-500/10"
+                        : m.type === "bind" ? "text-cyan-400 bg-cyan-500/10"
+                        : "text-amber-400 bg-amber-500/10";
+                      return (
+                        <div key={i} className="bg-slate-800/60 border border-slate-700/40 rounded px-2.5 py-1.5">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[10px] uppercase font-mono px-1.5 py-0.5 rounded ${typeColor}`}>{m.type}</span>
+                            <span className="text-xs font-mono text-slate-200 truncate flex-1" title={m.destination}>{m.destination}</span>
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${m.rw ? "text-slate-400 bg-slate-700/60" : "text-amber-300 bg-amber-500/15"}`}>
+                              {m.rw ? "rw" : "ro"}
+                            </span>
+                          </div>
+                          {m.name && (
+                            <div className="text-[10px] text-slate-400 font-mono pl-1 truncate" title={m.name}>
+                              <span className="text-slate-600">name:</span> {m.name}
+                            </div>
+                          )}
+                          <div className="text-[10px] text-slate-500 font-mono pl-1 truncate" title={m.source}>
+                            <span className="text-slate-600">←</span> {m.source}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Connected services */}
               {connectedSvcs.length > 0 && (
                   <div>

@@ -99,6 +99,8 @@ bun run start
 - **Ejecutar comandos** — terminal inline (`docker exec`) desde el DetailPanel con output, sin abrir SSH ni terminal externa
 - **Toast de errores** — cuando una accion falla (rebuild que rompe, exec con exit code != 0, etc.) aparece un toast top-right con el error completo, copiable al clipboard
 - **Control de acceso por path** — variable `ALLOWED_PATHS` permite restringir acciones a containers cuyo compose file este bajo rutas especificas. Ideal para servidores compartidos: ves todo, solo tocas lo tuyo. Los containers fuera de las rutas aparecen con candado
+- **Recomendaciones de configuracion Docker** — banners de aviso en el DetailPanel cuando un container tiene config sub-optima: sin limite de memoria, sin limite de CPU, sin restart policy (`unless-stopped` recomendado). Ayuda al usuario a adoptar mejores practicas de Docker sin tener que recordarlas
+- **Volumenes y mounts** — DetailPanel lista cada mount del container: tipo (bind / volume / tmpfs), source en el host, destination en el container, modo rw/ro. Util para debugging ("donde estan mis datos?", "es read-only?", "es persistente?")
 - **Filtro de proyectos** — dropdown para mostrar/ocultar proyectos, persiste entre sesiones
 - **Autenticacion** — pantalla de login con AUTH_TOKEN para acceso remoto seguro
 - **Leyenda de conexiones** — colores por tipo: Database (azul), Cache (rojo), Broker (naranja), Proxy (verde)
@@ -108,6 +110,54 @@ bun run start
 - **Notificaciones Discord** — webhook configurable que avisa cambios de estado, alertas de recursos, acciones manuales y errores
 - **Umbrales por contenedor** — overrides personalizados de CPU/MEM (con fallback a umbrales globales) y toggle de notificaciones por servicio
 - **Pagina de settings** — configuracion de la aplicacion (auth, Discord, hosts Docker)
+
+## Mejores prácticas
+
+ContainerFlow no solo monitorea: detecta configuración sub-óptima de Docker y la marca con un banner ámbar en el DetailPanel del container afectado. La idea es ayudarte a adoptar buenas prácticas sin tener que recordarlas tú.
+
+### Recomendaciones activas (warnings automáticos)
+
+| Detección | Por qué importa | Cómo se ve en ContainerFlow |
+|---|---|---|
+| **Sin `memory_limit`** | Un container sin tope de RAM puede acaparar toda la memoria del host y tumbar a los demás (incluido el daemon). El kernel hace OOM kill aleatorio bajo presión. | Banner: "Sin límite de memoria configurado en Docker" |
+| **Sin `cpu_quota`** | Similar al de memoria — un container puede saturar todos los núcleos. En multi-tenant esto es crítico, en single-tenant degrada la responsividad del host. | Banner: "Sin límite de CPU configurado en Docker" |
+| **`restart: no` o vacío** | Si el proceso muere, el container queda muerto. En producción casi siempre quieres `unless-stopped` (reinicia si crashea, **NO** si lo paraste manualmente). | Banner: "Restart policy: none — el contenedor no se reiniciará automáticamente si se detiene" |
+
+### Configuración recomendada (template)
+
+```yaml
+# docker-compose.yml — buenas prácticas
+services:
+  mi-app:
+    image: mi-app:latest
+    restart: unless-stopped              # ← reinicia tras crashes, respeta stops manuales
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"                    # ← máximo medio núcleo
+          memory: 256M                   # ← tope absoluto, evita OOM del host
+    healthcheck:                         # ← detecta apps "vivas pero rotas"
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+```
+
+### Por qué ContainerFlow hace esto
+
+La mayoría de tutoriales de Docker no mencionan estas configuraciones porque "funciona sin ellas". Pero en producción son la diferencia entre:
+
+- **Sin límites**: un memory leak en un servicio tumba a TODO el servidor
+- **Con límites**: el container se mata a sí mismo, el resto sigue vivo, las restart policies lo reviven
+
+ContainerFlow te lo recuerda visualmente cada vez que abres el DetailPanel — no es spam, es contexto educativo solo donde aplica.
+
+### En roadmap
+
+- **Healthcheck recommendations**: detectar containers sin `HEALTHCHECK` y sugerir uno contextual según la imagen (postgres → `pg_isready`, redis → `redis-cli ping`, http app → `curl /health`, etc.)
+- **Mounts no persistentes**: warning cuando una DB usa `tmpfs` o bind a directorio efímero
+- **Versión latest**: warning cuando un container usa `image:latest` (no reproducible)
 
 ## Monitoreo e historial
 
