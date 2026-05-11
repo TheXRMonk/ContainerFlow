@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/RGJorge/containerflow/blob/main/SECURITY.md
+    about: Report security issues privately, NOT as a public issue
+  - name: Commercial / partnership inquiries
+    url: mailto:alteonx.servicios@gmail.com
+    about: Commercial support, custom features, or AGPL-3.0 alternatives
