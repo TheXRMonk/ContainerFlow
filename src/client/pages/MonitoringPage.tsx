@@ -84,9 +84,10 @@ interface MonitoringPageProps {
   services: Service[];
   eventLogStream: EventLogEntry[];
   notificationStream: NotificationLogEntry[];
+  onOpenServiceDetail: (uid: string, tab?: "info" | "config" | "env" | "stats") => void;
 }
 
-export function MonitoringPage({ events, token, services, eventLogStream, notificationStream }: MonitoringPageProps) {
+export function MonitoringPage({ events, token, services, eventLogStream, notificationStream, onOpenServiceDetail }: MonitoringPageProps) {
   const { t } = useT();
   const [statsRange, setStatsRange] = useState<StatsRange>("1h");
   const [activeTab, setActiveTab] = useState<"history" | "events" | "notifications">("history");
@@ -493,6 +494,7 @@ export function MonitoringPage({ events, token, services, eventLogStream, notifi
             liveStream={eventLogStream}
             filteredUids={finalFilteredServices}
             hasActiveFilter={hasActiveFilter}
+            onOpenServiceDetail={onOpenServiceDetail}
           />
         )}
 
@@ -504,6 +506,7 @@ export function MonitoringPage({ events, token, services, eventLogStream, notifi
             liveStream={notificationStream}
             filteredUids={finalFilteredServices}
             hasActiveFilter={hasActiveFilter}
+            onOpenServiceDetail={onOpenServiceDetail}
           />
         )}
       </div>
@@ -853,7 +856,7 @@ function MonitoringServiceCard({
 // Events log tab — Docker events + UI actions, persistent in SQLite
 // ──────────────────────────────────────────────────────────────────────────────
 
-function EventsLogTab({ token, services, liveStream, filteredUids, hasActiveFilter }: { token: string; services: Service[]; liveStream: EventLogEntry[]; filteredUids: Set<string>; hasActiveFilter: boolean }) {
+function EventsLogTab({ token, services, liveStream, filteredUids, hasActiveFilter, onOpenServiceDetail }: { token: string; services: Service[]; liveStream: EventLogEntry[]; filteredUids: Set<string>; hasActiveFilter: boolean; onOpenServiceDetail: (uid: string, tab?: "info" | "config" | "env" | "stats") => void }) {
   const { t } = useT();
   const [events, setEvents] = useState<EventLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -897,8 +900,14 @@ function EventsLogTab({ token, services, liveStream, filteredUids, hasActiveFilt
   return (
     <div className="bg-slate-800/50 border border-slate-700/60 rounded-xl overflow-hidden">
       <div className="divide-y divide-slate-700/40">
-        {allEvents.map((ev) => (
-          <div key={ev.id} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-700/30 transition-colors">
+        {allEvents.map((ev) => {
+          const isKnownService = services.some((svc) => svc.uid === ev.service);
+          return (
+          <div
+            key={ev.id}
+            onClick={isKnownService ? () => onOpenServiceDetail(ev.service, "stats") : undefined}
+            className={`flex items-center gap-4 px-5 py-3 ${isKnownService ? "cursor-pointer hover:bg-slate-700/30" : ""} transition-colors`}
+          >
             <div className="w-8 h-8 rounded-lg bg-slate-700/60 flex items-center justify-center flex-shrink-0">
               {eventIcon(ev.action)}
             </div>
@@ -924,7 +933,8 @@ function EventsLogTab({ token, services, liveStream, filteredUids, hasActiveFilt
             </div>
             <span className="text-xs text-slate-500 font-mono flex-shrink-0">{timeAgo(ev.timestamp)}</span>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -936,13 +946,13 @@ function EventsLogTab({ token, services, liveStream, filteredUids, hasActiveFilt
 
 function levelStyles(level: NotificationLogEntry["level"]) {
   switch (level) {
-    case "error": return { ring: "border-red-500/40", iconBg: "bg-red-500/15", iconColor: "text-red-400", titleColor: "text-red-300" };
-    case "warning": return { ring: "border-amber-500/40", iconBg: "bg-amber-500/15", iconColor: "text-amber-400", titleColor: "text-amber-300" };
-    case "info": return { ring: "border-slate-700/40", iconBg: "bg-slate-700/60", iconColor: "text-slate-400", titleColor: "text-slate-200" };
+    case "error": return { ring: "border-red-500/40", iconBg: "bg-red-500/20", iconColor: "text-red-400", titleColor: "text-red-300", dot: "bg-red-500", bar: "bg-red-500" };
+    case "warning": return { ring: "border-amber-500/40", iconBg: "bg-amber-500/20", iconColor: "text-amber-400", titleColor: "text-amber-300", dot: "bg-amber-500", bar: "bg-amber-500" };
+    case "info": return { ring: "border-cyan-500/40", iconBg: "bg-cyan-500/20", iconColor: "text-cyan-400", titleColor: "text-cyan-300", dot: "bg-cyan-500", bar: "bg-cyan-500" };
   }
 }
 
-function NotificationsLogTab({ token, services, liveStream, filteredUids, hasActiveFilter }: { token: string; services: Service[]; liveStream: NotificationLogEntry[]; filteredUids: Set<string>; hasActiveFilter: boolean }) {
+function NotificationsLogTab({ token, services, liveStream, filteredUids, hasActiveFilter, onOpenServiceDetail }: { token: string; services: Service[]; liveStream: NotificationLogEntry[]; filteredUids: Set<string>; hasActiveFilter: boolean; onOpenServiceDetail: (uid: string, tab?: "info" | "config" | "env" | "stats") => void }) {
   const { t } = useT();
   const [notifications, setNotifications] = useState<NotificationLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -986,8 +996,13 @@ function NotificationsLogTab({ token, services, liveStream, filteredUids, hasAct
     <div className="space-y-2">
       {allNotifs.map((n) => {
         const s = levelStyles(n.level);
+        const isKnownService = services.some((svc) => svc.uid === n.service);
         return (
-          <div key={n.id} className={`bg-slate-800/50 border ${s.ring} rounded-lg px-4 py-3`}>
+          <div
+            key={n.id}
+            onClick={isKnownService ? () => onOpenServiceDetail(n.service, "stats") : undefined}
+            className={`bg-slate-800/50 border ${s.ring} rounded-lg px-4 py-3 ${isKnownService ? "cursor-pointer hover:bg-slate-800/80 transition-colors" : ""}`}
+          >
             <div className="flex items-start gap-3">
               <div className={`w-7 h-7 rounded-lg ${s.iconBg} flex items-center justify-center shrink-0`}>
                 <AlertTriangle size={14} className={s.iconColor} />

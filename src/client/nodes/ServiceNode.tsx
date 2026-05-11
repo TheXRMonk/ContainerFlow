@@ -138,7 +138,6 @@ export const ServiceNode = memo(function ServiceNode({ data, id }: NodeProps) {
 
   return (
     <div
-      title={`${d.label} (${d.state})${d.locked ? " — view-only (outside ALLOWED_PATHS)" : ""}\nImage: ${d.image}\nID: ${d.id || ""}\nPorts: ${d.ports?.map((p) => `${p.host}:${p.container}`).join(", ") || "none"}`}
       className={`relative rounded-xl border ${s.border} ${s.bg} backdrop-blur-sm
                   shadow-lg shadow-black/30 p-4 min-w-[220px] ring-2 ${s.ring}
                   transition-[opacity,box-shadow] duration-300 ${flashClass} ${d.locked ? "opacity-70" : ""}`}

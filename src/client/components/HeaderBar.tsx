@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   LogOut, Cpu, MemoryStick,
   LayoutDashboard, Activity, Settings, Bell,
@@ -50,16 +50,51 @@ function eventIcon(action: string) {
 }
 
 interface NotificationBellProps {
-  events: DockerEvent[];
+  notifications: NotificationLogEntry[];
+  services: Service[];
+  token: string;
+  onOpenServiceDetail: (uid: string, tab?: "info" | "config" | "env" | "stats") => void;
 }
 
-function NotificationBell({ events }: NotificationBellProps) {
+function levelDot(level: NotificationLogEntry["level"]): string {
+  if (level === "error") return "bg-red-400";
+  if (level === "warning") return "bg-amber-400";
+  return "bg-cyan-400";
+}
+
+const LAST_READ_KEY = "df:lastReadNotifId";
+
+function NotificationBell({ notifications, services, token, onOpenServiceDetail }: NotificationBellProps) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
-  const [lastSeen, setLastSeen] = useState(events.length);
+  const [persisted, setPersisted] = useState<NotificationLogEntry[]>([]);
+  const [lastReadId, setLastReadId] = useState<number>(() => {
+    try { return parseInt(localStorage.getItem(LAST_READ_KEY) || "0") || 0; } catch { return 0; }
+  });
   const ref = useRef<HTMLDivElement>(null);
 
-  const unread = events.length - lastSeen;
+  // Preload from server so the bell has history immediately after a page reload
+  useEffect(() => {
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    fetch("/api/notifications?limit=20", { headers })
+      .then((r) => r.ok ? r.json() : [])
+      .then((d: NotificationLogEntry[]) => setPersisted(d))
+      .catch(() => {});
+  }, [token]);
+
+  // Merge persisted + live, dedupe by id, keep newest 20
+  const recent = useMemo(() => {
+    const seen = new Set<number>();
+    const merged: NotificationLogEntry[] = [];
+    for (const n of [...notifications, ...persisted]) {
+      if (seen.has(n.id)) continue;
+      seen.add(n.id);
+      merged.push(n);
+    }
+    return merged.slice(0, 20);
+  }, [notifications, persisted]);
+  const unread = recent.filter((n) => n.id > lastReadId).length;
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -72,18 +107,21 @@ function NotificationBell({ events }: NotificationBellProps) {
   }, []);
 
   const handleToggle = () => {
-    if (!open) setLastSeen(events.length);
+    if (!open && recent.length > 0) {
+      // Mark current set as read (persist)
+      const newest = recent[0].id;
+      setLastReadId(newest);
+      try { localStorage.setItem(LAST_READ_KEY, String(newest)); } catch {}
+    }
     setOpen((v) => !v);
   };
-
-  const recent = events.slice(-20).reverse();
 
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={handleToggle}
         className="relative flex items-center justify-center text-slate-500 hover:text-slate-300 transition-colors"
-        title="Notifications"
+        title={t("header.recentNotifications")}
       >
         <Bell size={16} />
         {unread > 0 && (
@@ -93,22 +131,35 @@ function NotificationBell({ events }: NotificationBellProps) {
         )}
       </button>
       {open && (
-        <div className="absolute top-full right-0 mt-1.5 bg-slate-800 border border-slate-700 rounded-lg shadow-xl shadow-black/40 w-72 max-h-80 overflow-auto z-[9999]">
+        <div className="absolute top-full right-0 mt-1.5 bg-slate-800 border border-slate-700 rounded-lg shadow-xl shadow-black/40 w-80 max-h-96 overflow-auto z-[9999]">
           <div className="px-3 py-2 border-b border-slate-700/60 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            {t("header.recentEvents")}
+            {t("header.recentNotifications")}
           </div>
           {recent.length === 0 ? (
-            <div className="px-3 py-6 text-center text-sm text-slate-500">{t("header.noEvents")}</div>
+            <div className="px-3 py-6 text-center text-sm text-slate-500">{t("header.noNotifications")}</div>
           ) : (
-            recent.map((ev, i) => (
-              <div key={`${ev.service}-${ev.time}-${i}`} className="flex items-center gap-2.5 px-3 py-2 hover:bg-slate-700/40 transition-colors">
-                {eventIcon(ev.action)}
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs text-slate-300 truncate block">{ev.service}</span>
+            recent.map((n) => {
+              const isKnownService = services.some((s) => s.uid === n.service);
+              const isUnread = n.id > lastReadId;
+              return (
+                <div
+                  key={n.id}
+                  onClick={isKnownService ? () => { onOpenServiceDetail(n.service, "stats"); setOpen(false); } : undefined}
+                  className={`flex items-start gap-2.5 px-3 py-2 ${isKnownService ? "cursor-pointer hover:bg-slate-700/40" : ""} transition-colors ${isUnread ? "" : "opacity-55"}`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${levelDot(n.level)} mt-1.5 shrink-0 ${isUnread ? "" : "ring-1 ring-slate-600 ring-offset-2 ring-offset-slate-800 opacity-70"}`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className={`text-xs ${isUnread ? "text-slate-200 font-semibold" : "text-slate-300 font-normal"} truncate`}>{n.title}</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 truncate block">{n.service}</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-mono flex-shrink-0 mt-0.5">{timeAgo(n.timestamp)}</span>
                 </div>
-                <span className="text-[10px] text-slate-500 font-mono flex-shrink-0">{timeAgo(ev.time)}</span>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
@@ -124,6 +175,8 @@ interface HeaderBarProps {
   activePage: Page;
   onPageChange: (page: Page) => void;
   events: DockerEvent[];
+  notifications: NotificationLogEntry[];
+  onOpenServiceDetail: (uid: string, tab?: "info" | "config" | "env" | "stats") => void;
 }
 
 export function HeaderBar({
@@ -134,6 +187,8 @@ export function HeaderBar({
   activePage,
   onPageChange,
   events,
+  notifications,
+  onOpenServiceDetail,
 }: HeaderBarProps) {
   const { t, lang, setLang } = useT();
 
@@ -199,7 +254,7 @@ export function HeaderBar({
           </button>
         </div>
 
-        <NotificationBell events={events} />
+        <NotificationBell notifications={notifications} services={services} token={token} onOpenServiceDetail={onOpenServiceDetail} />
 
         {/* Logout (only if auth is active) */}
         {token && (

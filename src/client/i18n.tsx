@@ -7,6 +7,8 @@ const en = {
   "header.settings": "Settings",
   "header.recentEvents": "Recent Events",
   "header.noEvents": "No events yet",
+  "header.recentNotifications": "Recent Notifications",
+  "header.noNotifications": "No notifications yet",
 
   // Footer
   "footer.live": "Live",
@@ -263,6 +265,8 @@ const es: Record<TranslationKey, string> = {
   "header.settings": "Configuraci\u00f3n",
   "header.recentEvents": "Eventos Recientes",
   "header.noEvents": "Sin eventos a\u00fan",
+  "header.recentNotifications": "Notificaciones Recientes",
+  "header.noNotifications": "Sin notificaciones a\u00fan",
 
   // Footer
   "footer.live": "En vivo",

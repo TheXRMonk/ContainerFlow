@@ -2,30 +2,45 @@ import { describe, expect, it } from "vitest";
 import { computeMemoryBreakdown } from "./watcher";
 
 describe("computeMemoryBreakdown", () => {
-  it("subtracts inactive_file from usage (cgroup v2)", () => {
+  it("subtracts active_file + inactive_file from usage (cgroup v2)", () => {
     // Real example from a busy DB container on cgroup v2
     const memStats = {
       usage: 2108977152,
       limit: 2147483648,
       stats: {
         anon: 77737984,
-        file: 1996709888,
+        file: 1996709888,           // some kernels include shmem here — we avoid this
         inactive_file: 1811337216,
         active_file: 38223872,
       },
     };
     const r = computeMemoryBreakdown(memStats);
     expect(r.total).toBe(2108977152);
-    expect(r.cache).toBe(1811337216);
+    // We use active+inactive (= 1849561088), NOT `file` which can include shmem
+    expect(r.cache).toBe(1849561088);
     expect(r.anon).toBe(77737984);
     expect(r.limit).toBe(2147483648);
-    // real = 2108977152 - 1811337216 = 297639936 (~283 MB, real usage)
-    expect(r.real).toBe(297639936);
-    // NOT the inflated value of 2108977152 (~2.01 GB)
+    // real = 2108977152 - 1849561088 = 259416064 (~247 MB)
+    expect(r.real).toBe(259416064);
     expect(r.real).toBeLessThan(memStats.usage);
   });
 
-  it("uses total_inactive_file for cgroup v1", () => {
+  it("falls back to active_file + inactive_file when `file` not present", () => {
+    const memStats = {
+      usage: 1000000000,
+      limit: 2000000000,
+      stats: {
+        anon: 200000000,
+        active_file: 600000000,
+        inactive_file: 200000000,
+      },
+    };
+    const r = computeMemoryBreakdown(memStats);
+    expect(r.cache).toBe(800000000); // active + inactive
+    expect(r.real).toBe(200000000);
+  });
+
+  it("uses total cache for cgroup v1 (full page cache, not just inactive)", () => {
     const memStats = {
       usage: 1000000000,
       limit: 2000000000,
@@ -36,10 +51,10 @@ describe("computeMemoryBreakdown", () => {
       },
     };
     const r = computeMemoryBreakdown(memStats);
-    // Prefers total_inactive_file over generic cache
-    expect(r.cache).toBe(700000000);
+    // Prefers `cache` (total page cache) over partial total_inactive_file
+    expect(r.cache).toBe(800000000);
     expect(r.anon).toBe(200000000); // total_rss
-    expect(r.real).toBe(300000000);
+    expect(r.real).toBe(200000000);
   });
 
   it("falls back to cache field for legacy cgroup v1", () => {
@@ -88,7 +103,7 @@ describe("computeMemoryBreakdown", () => {
     expect(r.limit).toBe(0);
   });
 
-  it("matches docker stats CLI for the user's reported case (~12% real vs 98% inflated)", () => {
+  it("excludes all file cache for accurate DB container reading", () => {
     // From the bug report: ninjasagacw-db-1 cgroup v2
     const memStats = {
       usage: 2108977152, // 2.01 GB raw
@@ -104,8 +119,7 @@ describe("computeMemoryBreakdown", () => {
     const rawPercent = (r.total / r.limit) * 100;
     // Before fix: would show ~98%
     expect(rawPercent).toBeGreaterThan(95);
-    // After fix: shows ~14% (close to docker stats CLI's 12%)
+    // After fix: subtracting all file cache → much lower (~13% in this case)
     expect(realPercent).toBeLessThan(20);
-    expect(realPercent).toBeGreaterThan(10);
   });
 });

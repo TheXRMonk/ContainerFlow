@@ -119,6 +119,19 @@ function Dashboard({ token }: { token: string }) {
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [detailService, setDetailService] = useState<Service | null>(null);
   const [openLogsFullscreen, setOpenLogsFullscreen] = useState(false);
+
+  const [detailInitialTab, setDetailInitialTab] = useState<"info" | "config" | "env" | "stats" | undefined>(undefined);
+
+  // Open the DetailPanel for a service by uid. Navigates to dashboard if needed.
+  // Used from MonitoringPage notifications/events tabs (click → see container detail).
+  const openServiceDetail = useCallback((uid: string, tab?: "info" | "config" | "env" | "stats") => {
+    const svc = services.find((s) => s.uid === uid);
+    if (!svc) return;
+    setActivePage("dashboard");
+    setSelectedNode(svc.uid);
+    setDetailInitialTab(tab);
+    setDetailService(svc);
+  }, [services]);
   const reactFlowRef = useRef<any>(null);
   const prevViewport = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const isDragging = useRef(false);
@@ -518,11 +531,13 @@ function Dashboard({ token }: { token: string }) {
         activePage={activePage}
         onPageChange={(page) => { setContextMenu(null); navigateTo(page); }}
         events={events}
+        notifications={notificationStream}
+        onOpenServiceDetail={openServiceDetail}
       />
 
       <ActionErrorToast errors={actionErrors} onDismiss={dismissActionError} onClearAll={clearActionErrors} />
 
-      {activePage === "monitoring" && <MonitoringPage events={events} token={token} services={services} eventLogStream={eventLogStream} notificationStream={notificationStream} />}
+      {activePage === "monitoring" && <MonitoringPage events={events} token={token} services={services} eventLogStream={eventLogStream} notificationStream={notificationStream} onOpenServiceDetail={openServiceDetail} />}
       {activePage === "settings" && <SettingsPage projects={projects} servicesCount={services.length} token={token} />}
 
       {/* Canvas — inset (only visible on dashboard) */}
@@ -767,6 +782,7 @@ function Dashboard({ token }: { token: string }) {
             services={filteredServices}
             getLogsSince={getLogsSince}
             initialLogsFullscreen={openLogsFullscreen}
+            initialTab={detailInitialTab}
             envFiles={envFiles}
             onEnvFileChange={handleEnvFileChange}
             events={events}

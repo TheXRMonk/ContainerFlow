@@ -57,12 +57,14 @@ interface DetailPanelProps {
   services: Service[];
   getLogsSince: (uid: string) => number | undefined;
   initialLogsFullscreen?: boolean;
+  /** Initial tab to open. Used when entering panel via notification/event click. */
+  initialTab?: "info" | "config" | "env" | "stats";
   envFiles: Record<string, string>;
   onEnvFileChange: (composeFile: string, envFile: string | null) => void;
   events: DockerEvent[];
 }
 
-export function DetailPanel({ service, stats, logLines, token, closing, locked, onClose, onAction, clearProcessing, pushActionError, sendMessage, clearLogLines, connections, services, getLogsSince, initialLogsFullscreen, envFiles, onEnvFileChange, events }: DetailPanelProps) {
+export function DetailPanel({ service, stats, logLines, token, closing, locked, onClose, onAction, clearProcessing, pushActionError, sendMessage, clearLogLines, connections, services, getLogsSince, initialLogsFullscreen, initialTab, envFiles, onEnvFileChange, events }: DetailPanelProps) {
   const { t } = useT();
   const [initialLogs, setInitialLogs] = useState<LogLine[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -70,7 +72,13 @@ export function DetailPanel({ service, stats, logLines, token, closing, locked, 
   const scrollRef = useRef<HTMLDivElement>(null);
   const subscribedRef = useRef<string | null>(null);
   const [visible, setVisible] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>("info");
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab ?? "info");
+
+  // When the panel opens for a different service (via notification/event click),
+  // honor the requested initialTab.
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [service.uid, initialTab]);
   const [logsExpanded, setLogsExpanded] = useState(false);
   const [envVisibleAll, setEnvVisibleAll] = useState(false);
   const [envVisibleSet, setEnvVisibleSet] = useState<Set<number>>(new Set());

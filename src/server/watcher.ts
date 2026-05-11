@@ -2,12 +2,19 @@ import { docker } from "./docker";
 import type { Service, Stats, DockerEvent } from "../shared/types";
 
 /** Compute real memory usage by subtracting reclaimable page cache.
- *  Mirrors `docker stats` CLI logic. Works for cgroup v1 and v2.
+ *  Works for cgroup v1 and v2.
  *
- *  Why: memory_stats.usage includes the kernel page cache (file-backed pages
- *  the kernel keeps in RAM "just in case"). That cache is INSTANTLY reclaimable
- *  under memory pressure and is NOT real usage. Containers with heavy I/O
- *  (DBs, collectors) appear at 90-100% when actually using 10-15%.
+ *  Why: memory_stats.usage includes the kernel page cache — file-backed pages
+ *  the kernel keeps in RAM after reading from disk. Both `active_file` and
+ *  `inactive_file` are reclaimable under memory pressure (the kernel drops
+ *  inactive first, then active when needed). They are NOT real container usage.
+ *
+ *  Note: `docker stats` CLI only subtracts `inactive_file`, which leaves the
+ *  `active_file` portion looking like real usage. For DB containers (Postgres,
+ *  MySQL, Mongo) most of their cached working set lives in `active_file`, so
+ *  `docker stats` still over-reports. We subtract the full file cache for a
+ *  more honest reading. The breakdown is exposed in mem_breakdown for users
+ *  who want to see what's cache vs anon vs total.
  *
  *  Returns: { real, cache, anon, total, limit } all in bytes. */
 export function computeMemoryBreakdown(memoryStats: any): {
@@ -20,10 +27,27 @@ export function computeMemoryBreakdown(memoryStats: any): {
   const total = memoryStats?.usage ?? 0;
   const limit = memoryStats?.limit ?? 0;
   const s = memoryStats?.stats ?? {};
-  // cgroup v2: 'inactive_file'
-  // cgroup v1: 'total_inactive_file' (recursive) or 'cache' (legacy)
-  const cache = s.inactive_file ?? s.total_inactive_file ?? s.cache ?? 0;
-  // anon = process memory (heap, stack). cgroup v2: 'anon'. cgroup v1: 'rss' or 'total_rss'.
+  // Total reclaimable file-backed page cache (does NOT include shmem, which is
+  // shared memory like Postgres shared_buffers — that IS real usage).
+  // Prefer `active_file + inactive_file` (cgroup v2) over `file` because some
+  // kernels include shmem in `file`, which would over-subtract.
+  let cache = 0;
+  if (typeof s.active_file === "number" || typeof s.inactive_file === "number") {
+    // cgroup v2 — sum the two file-cache buckets
+    cache = (s.active_file ?? 0) + (s.inactive_file ?? 0);
+  } else if (typeof s.total_cache === "number") {
+    // cgroup v1
+    cache = s.total_cache;
+  } else if (typeof s.cache === "number") {
+    // cgroup v1 (older)
+    cache = s.cache;
+  } else if (typeof s.total_inactive_file === "number") {
+    cache = s.total_inactive_file;
+  } else if (typeof s.file === "number") {
+    // Last-resort fallback (some kernels)
+    cache = s.file;
+  }
+  // anon = process memory (heap, stack). cgroup v2: `anon`. cgroup v1: `rss` or `total_rss`.
   const anon = s.anon ?? s.total_rss ?? s.rss ?? 0;
   const real = Math.max(0, total - cache);
   return { real, cache, anon, total, limit };
