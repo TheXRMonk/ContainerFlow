@@ -141,7 +141,7 @@ export const ServiceNode = memo(function ServiceNode({ data, id }: NodeProps) {
   return (
     <div
       className={`relative rounded-xl border ${s.border} ${s.bg} backdrop-blur-sm
-                  shadow-lg shadow-black/30 p-4 min-w-[220px] ring-2 ${s.ring}
+                  shadow-lg shadow-black/30 p-4 min-w-[220px] max-w-[240px] ring-2 ${s.ring}
                   transition-[opacity,box-shadow] duration-300 ${flashClass} ${d.locked ? "opacity-70" : ""}`}
     >
       {d.locked && (
@@ -181,7 +181,7 @@ export const ServiceNode = memo(function ServiceNode({ data, id }: NodeProps) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-white text-sm truncate">{d.label}</span>
+            <span className="font-bold text-white text-sm truncate" title={d.label}>{d.label}</span>
             {d.state === "processing" ? (
               <div className="flex items-center gap-0.5 shrink-0">
                 <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
@@ -193,7 +193,7 @@ export const ServiceNode = memo(function ServiceNode({ data, id }: NodeProps) {
               <div className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
             )}
           </div>
-          <div className="text-xs text-slate-500 truncate mt-0.5">
+          <div className="text-xs text-slate-500 truncate mt-0.5" title={d.image}>
             {d.image.startsWith("sha256:") ? `${t("node.noTag")} (${d.image.slice(7, 19)})` : d.image}
           </div>
         </div>

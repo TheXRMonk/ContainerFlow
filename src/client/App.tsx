@@ -671,7 +671,7 @@ function Dashboard({ token }: { token: string }) {
               <ChevronDown size={14} className={`text-slate-500 transition-transform ${filterOpen ? "rotate-180" : ""}`} />
             </button>
             {filterOpen && (
-              <div className="absolute top-full right-0 mt-1.5 bg-slate-800 border border-slate-700 rounded-lg shadow-xl shadow-black/40 py-1.5 min-w-[220px]">
+              <div className="absolute top-full right-0 mt-1.5 bg-slate-800 border border-slate-700 rounded-lg shadow-xl shadow-black/40 py-1.5 min-w-[220px] max-h-[280px] overflow-y-auto">
                 {/* Select/Deselect all */}
                 <button
                   onClick={() => {
@@ -706,15 +706,16 @@ function Dashboard({ token }: { token: string }) {
                     <button
                       key={p}
                       onClick={() => toggleProject(p)}
+                      title={p}
                       className="flex items-center gap-2.5 w-full px-3.5 py-2 text-sm hover:bg-slate-700/60 transition-colors"
                     >
-                      <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                      <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
                         active ? "bg-cyan-500 border-cyan-500" : "border-slate-600"
                       }`}>
                         {active && <Check size={12} className="text-white" />}
                       </div>
-                      <span className={active ? "text-slate-200" : "text-slate-500"}>{p}</span>
-                      <span className="ml-auto flex items-center gap-1.5 text-xs">
+                      <span className={`flex-1 min-w-0 truncate text-left ${active ? "text-slate-200" : "text-slate-500"}`}>{p}</span>
+                      <span className="ml-auto flex items-center gap-1.5 text-xs shrink-0">
                         <span className="text-emerald-500/70">{running}</span>
                         <span className="text-slate-600">/</span>
                         <span className="text-slate-400">{projectServices.length}</span>

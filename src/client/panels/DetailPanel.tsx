@@ -394,12 +394,13 @@ export function DetailPanel({ service, stats, logLines, token, closing, locked, 
       className={`absolute top-0 left-0 bottom-0 w-[900px] bg-slate-900/95 backdrop-blur-sm border-r border-slate-700/60 flex flex-col z-50 rounded-l-xl transition-transform duration-[400ms] ease-out ${visible ? "translate-x-0" : "-translate-x-full"}`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <span className={`w-2 h-2 rounded-full ${stateDot}`} />
-          <span className="text-sm font-semibold text-white truncate">{service.name}</span>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 shrink-0 gap-3">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${stateDot}`} />
+          <span className="text-sm font-semibold text-white truncate min-w-0 max-w-[240px]">{service.name}</span>
+          <Tooltip text={service.name} placement="bottom" width="w-72" size={12} />
           {locked && (
-            <span className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 bg-slate-700/60 border border-slate-600/50 rounded" title={t("access.viewOnly")}>
+            <span className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-slate-400 bg-slate-700/60 border border-slate-600/50 rounded shrink-0" title={t("access.viewOnly")}>
               <Lock size={10} />
               {t("access.viewOnly")}
             </span>
@@ -409,20 +410,20 @@ export function DetailPanel({ service, stats, logLines, token, closing, locked, 
               href={`http://${window.location.hostname}:${service.ports[0].host}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 text-slate-500 hover:text-cyan-400 transition-colors"
+              className="flex items-center gap-1 text-slate-500 hover:text-cyan-400 transition-colors shrink-0"
               title={`Open http://${window.location.hostname}:${service.ports[0].host}`}
             >
               <ExternalLink size={12} />
               <span className="text-[11px] font-mono">:{service.ports[0].host}</span>
             </a>
           )}
-          <span className={`text-xs font-mono ${stateColor} flex items-center gap-1`}>
+          <span className={`text-xs font-mono ${stateColor} flex items-center gap-1 shrink-0`}>
             {isProcessing ? `processing... ${elapsed}s` :
              isCrashed ? <><AlertTriangle size={11} />crashed (exit {service.exit_code}{service.oom_killed ? ", OOM" : ""})</> :
              service.state}
           </span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           {/* Action buttons */}
           {isProcessing ? (
             <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-yellow-400">
@@ -1265,16 +1266,17 @@ export function DetailPanel({ service, stats, logLines, token, closing, locked, 
       {/* Logs fullscreen modal */}
       {logsModal && (
         <div className="fixed inset-0 z-[100] bg-slate-900 flex flex-col">
-          <div className="flex items-center justify-between px-6 py-3 border-b border-slate-800 shrink-0">
-            <div className="flex items-center gap-2.5">
-              <Terminal size={16} className="text-cyan-400" />
-              <span className="text-sm font-semibold text-white">{service.name}</span>
-              <span className="text-xs text-slate-500 font-mono">logs</span>
+          <div className="flex items-center justify-between px-6 py-3 border-b border-slate-800 shrink-0 gap-3">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <Terminal size={16} className="text-cyan-400 shrink-0" />
+              <span className="text-sm font-semibold text-white truncate min-w-0 max-w-[240px]">{service.name}</span>
+              <Tooltip text={service.name} placement="bottom" width="w-72" size={12} />
+              <span className="text-xs text-slate-500 font-mono shrink-0">logs</span>
               {service.state === "running" && subscribedRef.current && (
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shrink-0" />
               )}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
               <button
                 onClick={() => {
                   const text = allLines.map((l) => `${l.timestamp ? formatTimestamp(l.timestamp) + " " : ""}${l.line}`).join("\n");
