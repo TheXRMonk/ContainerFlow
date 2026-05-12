@@ -7,19 +7,25 @@
 ![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun)
 [![Last Commit](https://img.shields.io/github/last-commit/RGJorge/containerflow)](https://github.com/RGJorge/containerflow/commits/main)
 
+**Read this in other languages**: [Español](./README.es.md)
+
 Real-time Docker architecture visualizer. Displays services, connections and metrics from all your Docker Compose projects in an interactive dashboard.
 
 ![ContainerFlow demo](docs/demo.gif)
 
-## Por qué ContainerFlow
+> *"Build what docker doesn't have the vision to build, and that Railway won't bring to local, without having to become either."*
+>
+> — u/dashingsauce, [on the launch thread](https://www.reddit.com/r/coolgithubprojects/comments/1ta8kak/comment/olecbxl/)
 
-Las herramientas existentes te muestran números. ContainerFlow además:
+## Why ContainerFlow
 
-- **Visualiza arquitectura** — grafo interactivo con conexiones (app→db, app→cache, proxy→app) detectadas automáticamente, no solo una lista plana
-- **Detecta config sub-óptima** — banners cuando un container corre sin límite de memoria, sin límite de CPU, o sin `restart: unless-stopped`. Te enseña buenas prácticas mientras lo usas
-- **Mide memoria real** — resta page cache (active + inactive), no solo inactive como `docker stats`. Tu DB con buffers Postgres no muestra 98% falso
-- **Multi-usuario seguro** — variable `ALLOWED_PATHS` para servidores compartidos: ves todo, solo tocas lo tuyo
-- **80 MB de RAM, startup en 500ms** — Bun + Hono. Pesa una fracción de Portainer y arranca antes que Grafana
+Existing tools show you numbers. ContainerFlow also:
+
+- **Visualizes architecture** — interactive graph with connections (app→db, app→cache, proxy→app) auto-detected, not just a flat list
+- **Detects sub-optimal config** — banners when a container runs without memory limits, CPU limits, or `restart: unless-stopped`. Teaches good practices while you use it
+- **Measures real memory** — subtracts full page cache (active + inactive), not just inactive like `docker stats`. Your Postgres DB with hot buffers no longer reports a false 98%
+- **Multi-tenant via path scoping** — `ALLOWED_PATHS` env var for shared servers: see everything, only touch what's yours
+- **80 MB RAM, ~500ms startup** — Bun + Hono. A fraction of Portainer's footprint, starts faster than Grafana
 
 ## Quick start
 
@@ -30,21 +36,21 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Abre `http://localhost:9470`. Listo.
+Open `http://localhost:9470`. Done.
 
-Para desarrollo nativo (hot reload): `bun install && bun run dev`.
+For native development (hot reload): `bun install && bun run dev`.
 
-## Documentación
+## Documentation
 
-- **[docs/docker-guide.md](./docs/docker-guide.md)** — Guía rápida de Docker explicado para usar ContainerFlow: qué hace cada acción (Start, Stop, Restart, Recreate, Rebuild, Remove, Exec), restart policies, resource limits, volúmenes, healthchecks y preguntas frecuentes.
-- **[docs/roadmap.md](./docs/roadmap.md)** — Roadmap del proyecto: qué está completo, qué viene, qué se descartó y por qué.
+- **[docs/docker-guide.md](./docs/docker-guide.md)** — Docker quick guide for using ContainerFlow: what each action does (Start, Stop, Restart, Recreate, Rebuild, Remove, Exec), restart policies, resource limits, volumes, healthchecks and FAQs. (Currently in Spanish; English translation in progress.)
+- **[docs/roadmap.md](./docs/roadmap.md)** — Project roadmap: what's done, what's coming, what was discarded and why.
 
-## Requisitos
+## Requirements
 
 - [Bun](https://bun.sh) >= 1.0
-- Docker corriendo con acceso al socket (`/var/run/docker.sock`)
+- Docker running with socket access (`/var/run/docker.sock`)
 
-## Instalacion
+## Installation
 
 ```bash
 git clone https://github.com/RGJorge/containerflow.git
@@ -52,115 +58,115 @@ cd containerflow
 bun install
 ```
 
-## Configuracion
+## Configuration
 
-Copiar el archivo de ejemplo y editar:
+Copy the example file and edit:
 
 ```bash
 cp .env.example .env
 ```
 
-Variables disponibles:
+Available variables:
 
-| Variable | Default | Descripcion |
+| Variable | Default | Description |
 |---|---|---|
-| `PORT` | `9470` | Puerto del servidor |
-| `AUTH_TOKEN` | _(vacio)_ | Token de autenticacion. Vacio = sin auth, solo localhost. Con valor = auth activado, acceso remoto |
-| `DATA_DIR` | `./data` | Directorio para persistencia: SQLite de historial (`.dockerflow-stats.db`), config Discord (`.dockerflow-discord.json`), overrides por contenedor (`.dockerflow-container-settings.json`), posiciones de nodos y env file overrides. Se crea automaticamente al startup. En Docker se monta en `/app/data` via volumen `containerflow-data`. |
-| `HOST_PROJECTS_DIR` | _(vacio)_ | Path adicional a montar para que `rebuild`/`remove` puedan leer compose files fuera de los defaults (`/home`, `/opt`, `/srv`, `/root`). Solo necesario para rutas no estandar (ej. `/data/apps`). |
-| `ALLOWED_PATHS` | _(vacio)_ | **Vacio = todo accionable** (modo permisivo). Con valores = lista separada por `:` de prefijos; solo containers cuyo compose file este bajo alguno de estos paths pueden ejecutar acciones, el resto aparece con candado. Ver seccion [Seguridad](#seguridad). |
-| `ALLOW_NON_COMPOSE` | `false` | **Solo aplica cuando `ALLOWED_PATHS` esta activo.** Si `ALLOWED_PATHS` esta vacio, esta variable no tiene efecto. Cuando aplica: `false` bloquea acciones sobre containers no-compose (corridos con `docker run` directo); `true` las permite. |
+| `PORT` | `9470` | Server port |
+| `AUTH_TOKEN` | _(empty)_ | Auth token. Empty = no auth, localhost only. Set = auth enabled, remote access allowed |
+| `DATA_DIR` | `./data` | Persistence directory: stats history (`.dockerflow-stats.db`), Discord config (`.dockerflow-discord.json`), per-container overrides (`.dockerflow-container-settings.json`), node positions and env file overrides. Auto-created on startup. In Docker, mounted at `/app/data` via the `containerflow-data` volume. |
+| `HOST_PROJECTS_DIR` | _(empty)_ | Additional path to mount so `rebuild`/`remove` can read compose files outside the defaults (`/home`, `/opt`, `/srv`, `/root`). Only needed for non-standard paths (e.g. `/data/apps`). |
+| `ALLOWED_PATHS` | _(empty)_ | **Empty = everything actionable** (permissive mode). With values = `:`-separated list of prefixes; only containers whose compose file lives under one of these paths can execute actions, the rest appear with a lock icon. See [Security](#security) section. |
+| `ALLOW_NON_COMPOSE` | `false` | **Only applies when `ALLOWED_PATHS` is active.** If `ALLOWED_PATHS` is empty, this has no effect. When applicable: `false` blocks actions on non-compose containers (started with `docker run` directly); `true` allows them. |
 
-## Uso
+## Usage
 
-### Desarrollo (hot reload)
+### Development (hot reload)
 
 ```bash
 bun run dev
 ```
 
-Abre `http://localhost:9420` (Vite dev con hot reload, proxea API al backend en puerto 9470).
+Opens `http://localhost:9420` (Vite dev with hot reload, proxies API to the backend on port 9470).
 
-### Produccion (Docker)
+### Production (Docker)
 
 ```bash
 docker compose up -d
 ```
 
-Abre `http://localhost:9470`.
+Opens `http://localhost:9470`.
 
-### Produccion (manual)
+### Production (manual)
 
 ```bash
 bun run build
 bun run start
 ```
 
-Abre `http://localhost:9470`.
+Opens `http://localhost:9470`.
 
-### Modos de visualizacion
+### Visualization modes
 
 ```bash
-# Ver TODOS los containers Docker
+# View ALL Docker containers
 bun run start -- --all
 
-# Ver solo proyectos especificos
-bun run start -- --projects=mi-proyecto,otro-proyecto
+# View only specific projects
+bun run start -- --projects=my-project,another-project
 
-# Auto-detectar desde el directorio actual
+# Auto-detect from current directory
 bun run start
 ```
 
-## Funcionalidades
+## Features
 
-- **Descubrimiento automatico** — detecta servicios via Docker socket, agrupa por proyecto o compose file
-- **Conexiones inteligentes** — detecta relaciones app→database, app→cache, proxy→app, worker→broker
-- **Metricas en tiempo real** — CPU y memoria por container, actualizado cada 3 segundos
-- **Eventos Docker** — flash visual cuando un container inicia, para o reinicia
-- **Panel de detalle** — click en un container para ver info, stats, variables de entorno y configuracion en tabs separados
-- **Logs de containers** — logs en tiempo real con scroll automatico, filtro por stream (stdout/stderr) y opcion de copiar
-- **Acciones sobre containers** — start, stop, restart, rebuild y remove directamente desde el panel
-- **Ejecutar comandos** — terminal inline (`docker exec`) desde el DetailPanel con output, sin abrir SSH ni terminal externa
-- **Toast de errores** — cuando una accion falla (rebuild que rompe, exec con exit code != 0, etc.) aparece un toast top-right con el error completo, copiable al clipboard
-- **Control de acceso por path** — variable `ALLOWED_PATHS` permite restringir acciones a containers cuyo compose file este bajo rutas especificas. Ideal para servidores compartidos: ves todo, solo tocas lo tuyo. Los containers fuera de las rutas aparecen con candado
-- **Recomendaciones de configuracion Docker** — banners de aviso en el DetailPanel cuando un container tiene config sub-optima: sin limite de memoria, sin limite de CPU, sin restart policy (`unless-stopped` recomendado). Ayuda al usuario a adoptar mejores practicas de Docker sin tener que recordarlas
-- **Volumenes y mounts** — DetailPanel lista cada mount del container: tipo (bind / volume / tmpfs), source en el host, destination en el container, modo rw/ro. Util para debugging ("donde estan mis datos?", "es read-only?", "es persistente?")
-- **Filtro de proyectos** — dropdown para mostrar/ocultar proyectos, persiste entre sesiones
-- **Autenticacion** — pantalla de login con AUTH_TOKEN para acceso remoto seguro
-- **Leyenda de conexiones** — colores por tipo: Database (azul), Cache (rojo), Broker (naranja), Proxy (verde)
-- **Grupos visuales** — recuadros por proyecto/compose con titulo, archivo compose y conteo de containers
-- **Menu contextual** — click derecho en un nodo para acciones rapidas
-- **Pagina de monitoring** — historial de CPU/RAM por servicio (1h, 6h, 24h, 7d) persistido en SQLite, gráficas con sparkline, expand por contenedor, filtros por proyecto/servicio y feed de eventos Docker
-- **Notificaciones Discord** — webhook configurable que avisa cambios de estado, alertas de recursos, acciones manuales y errores
-- **Umbrales por contenedor** — overrides personalizados de CPU/MEM (con fallback a umbrales globales) y toggle de notificaciones por servicio
-- **Pagina de settings** — configuracion de la aplicacion (auth, Discord, hosts Docker)
+- **Automatic discovery** — detects services via Docker socket, groups by project or compose file
+- **Smart connections** — detects app→database, app→cache, proxy→app, worker→broker relationships
+- **Real-time metrics** — CPU and memory per container, refreshed every 3 seconds
+- **Docker events** — visual flash when a container starts, stops or restarts
+- **Detail panel** — click a container to see info, stats, env vars and config in separate tabs
+- **Container logs** — real-time logs with auto-scroll, stream filter (stdout/stderr) and copy option
+- **Container actions** — start, stop, restart, rebuild, recreate and remove directly from the panel
+- **Execute commands** — inline terminal (`docker exec`) from the DetailPanel with output, no SSH or external terminal needed
+- **Error toasts** — when an action fails (broken rebuild, exec with non-zero exit code, etc.) a top-right toast shows the full error, copyable to clipboard
+- **Path-based access control** — `ALLOWED_PATHS` env var lets you restrict actions to containers whose compose file lives under specific paths. Ideal for shared servers: see everything, only touch what's yours. Containers outside the paths appear with a lock icon
+- **Docker config recommendations** — warning banners in the DetailPanel when a container has sub-optimal config: no memory limit, no CPU limit, no restart policy (`unless-stopped` recommended). Helps users adopt good Docker practices without having to remember them
+- **Volumes and mounts** — DetailPanel lists each mount on the container: type (bind / volume / tmpfs), source on the host, destination in the container, rw/ro mode. Useful for debugging ("where's my data?", "is this read-only?", "is it persistent?")
+- **Project filter** — dropdown to show/hide projects, persists across sessions
+- **Authentication** — login screen with AUTH_TOKEN for secure remote access
+- **Connection legend** — color-coded by type: Database (blue), Cache (red), Broker (orange), Proxy (green)
+- **Visual groups** — boxes per project/compose with title, compose file and container count
+- **Context menu** — right-click on a node for quick actions
+- **Monitoring page** — CPU/RAM history per service (1h, 6h, 24h, 7d) persisted in SQLite, sparkline charts, expand per container, filters by project/service, and a Docker events feed
+- **Discord notifications** — configurable webhook for state changes, resource alerts, manual actions and errors
+- **Per-container thresholds** — custom CPU/MEM overrides (with fallback to global thresholds) and notification toggle per service
+- **Settings page** — application configuration (auth, Discord, Docker hosts)
 
-## Mejores prácticas
+## Best practices
 
-ContainerFlow no solo monitorea: detecta configuración sub-óptima de Docker y la marca con un banner ámbar en el DetailPanel del container afectado. La idea es ayudarte a adoptar buenas prácticas sin tener que recordarlas tú.
+ContainerFlow doesn't just monitor: it detects sub-optimal Docker configuration and flags it with an amber banner in the affected container's DetailPanel. The idea is to help you adopt good practices without having to remember them.
 
-### Recomendaciones activas (warnings automáticos)
+### Active recommendations (automatic warnings)
 
-| Detección | Por qué importa | Cómo se ve en ContainerFlow |
+| Detection | Why it matters | How it shows in ContainerFlow |
 |---|---|---|
-| **Sin `memory_limit`** | Un container sin tope de RAM puede acaparar toda la memoria del host y tumbar a los demás (incluido el daemon). El kernel hace OOM kill aleatorio bajo presión. | Banner: "Sin límite de memoria configurado en Docker" |
-| **Sin `cpu_quota`** | Similar al de memoria — un container puede saturar todos los núcleos. En multi-tenant esto es crítico, en single-tenant degrada la responsividad del host. | Banner: "Sin límite de CPU configurado en Docker" |
-| **`restart: no` o vacío** | Si el proceso muere, el container queda muerto. En producción casi siempre quieres `unless-stopped` (reinicia si crashea, **NO** si lo paraste manualmente). | Banner: "Restart policy: none — el contenedor no se reiniciará automáticamente si se detiene" |
+| **No `memory_limit`** | A container without a RAM cap can hog all host memory and take down everything else (including the daemon). The kernel does random OOM kills under pressure. | Banner: "No memory limit configured in Docker" |
+| **No `cpu_quota`** | Similar to memory — a container can saturate all cores. Critical in multi-tenant, degrades host responsiveness in single-tenant. | Banner: "No CPU limit configured in Docker" |
+| **`restart: no` or empty** | If the process dies, the container stays dead. In production you almost always want `unless-stopped` (restarts on crash, does **NOT** if you stopped it manually). | Banner: "Restart policy: none — the container will not restart automatically if stopped" |
 
-### Configuración recomendada (template)
+### Recommended config (template)
 
 ```yaml
-# docker-compose.yml — buenas prácticas
+# docker-compose.yml — best practices
 services:
-  mi-app:
-    image: mi-app:latest
-    restart: unless-stopped              # ← reinicia tras crashes, respeta stops manuales
+  my-app:
+    image: my-app:latest
+    restart: unless-stopped              # ← restarts on crash, respects manual stops
     deploy:
       resources:
         limits:
-          cpus: "0.5"                    # ← máximo medio núcleo
-          memory: 256M                   # ← tope absoluto, evita OOM del host
-    healthcheck:                         # ← detecta apps "vivas pero rotas"
+          cpus: "0.5"                    # ← maximum half a core
+          memory: 256M                   # ← absolute cap, prevents host OOM
+    healthcheck:                         # ← detects "alive but broken" apps
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
@@ -168,117 +174,118 @@ services:
       start_period: 30s
 ```
 
-### Por qué ContainerFlow hace esto
+### Why ContainerFlow does this
 
-La mayoría de tutoriales de Docker no mencionan estas configuraciones porque "funciona sin ellas". Pero en producción son la diferencia entre:
+Most Docker tutorials don't mention these settings because "it works without them". But in production they're the difference between:
 
-- **Sin límites**: un memory leak en un servicio tumba a TODO el servidor
-- **Con límites**: el container se mata a sí mismo, el resto sigue vivo, las restart policies lo reviven
+- **No limits**: a memory leak in one service takes down the ENTIRE server
+- **With limits**: the container kills itself, the rest stays alive, restart policies revive it
 
-ContainerFlow te lo recuerda visualmente cada vez que abres el DetailPanel — no es spam, es contexto educativo solo donde aplica.
+ContainerFlow reminds you visually each time you open the DetailPanel — not spam, just educational context where it applies.
 
-### En roadmap
+### On the roadmap
 
-- **Healthcheck recommendations**: detectar containers sin `HEALTHCHECK` y sugerir uno contextual según la imagen (postgres → `pg_isready`, redis → `redis-cli ping`, http app → `curl /health`, etc.)
-- **Mounts no persistentes**: warning cuando una DB usa `tmpfs` o bind a directorio efímero
-- **Versión latest**: warning cuando un container usa `image:latest` (no reproducible)
+- **Healthcheck recommendations**: detect containers without `HEALTHCHECK` and suggest a contextual one based on the image (postgres → `pg_isready`, redis → `redis-cli ping`, http app → `curl /health`, etc.)
+- **Non-persistent mounts**: warning when a DB uses `tmpfs` or binds to an ephemeral directory
+- **`:latest` tag**: warning when a container uses `image:latest` (not reproducible)
 
-## Monitoreo e historial
+## Monitoring and history
 
-ContainerFlow guarda un historial de métricas y notifica eventos importantes a Discord.
+ContainerFlow keeps a metrics history and notifies important events to Discord.
 
-### Historial de métricas
+### Metrics history
 
-- **Persistencia** — stats de CPU y memoria se almacenan en SQLite (`.dockerflow-stats.db`) cada vez que se hace polling de Docker (~3s)
-- **Rangos** — `1h`, `6h`, `24h`, `7d` con buckets agregados (30s / 60s / 5min / 30min) para rendimiento
-- **Retención** — auto-limpieza horaria descarta datos con más de 7 días y compacta la base con `VACUUM`
+- **Persistence** — CPU and memory stats stored in SQLite (`.dockerflow-stats.db`) on every Docker polling cycle (~3s)
+- **Ranges** — `1h`, `6h`, `24h`, `7d` with aggregated buckets (30s / 60s / 5min / 30min) for performance
+- **Retention** — hourly auto-cleanup drops data older than 7 days and compacts the database with `VACUUM`
 - **API** —
-  - `GET /api/stats/history?range=1h` — historial de todos los servicios
-  - `GET /api/stats/history/:uid?range=1h` — historial de un servicio específico
-- **UI** — la página de monitoring (`MonitoringPage.tsx`) muestra una tarjeta por servicio con sparkline de CPU y MEM, valor actual, promedio y línea de umbral. Cada tarjeta puede expandirse para ver una gráfica más grande, y se filtra por proyecto y/o servicio (los filtros son acumulativos).
+  - `GET /api/stats/history?range=1h` — history of all services
+  - `GET /api/stats/history/:uid?range=1h` — history of a specific service
+- **UI** — the monitoring page (`MonitoringPage.tsx`) shows a card per service with CPU and MEM sparklines, current value, average and threshold line. Each card can be expanded for a larger chart, and filtered by project and/or service (filters are cumulative).
 
-### Notificaciones Discord
+### Discord notifications
 
-Configurables desde **Settings → Discord Notifications**. Requiere un webhook URL que empiece por `https://discord.com/api/webhooks/`.
+Configured from **Settings → Discord Notifications**. Requires a webhook URL starting with `https://discord.com/api/webhooks/`.
 
-Eventos soportados (cada uno se puede activar/desactivar):
+Supported events (each can be toggled on/off):
 
-| Evento | Cuándo dispara |
+| Event | When it fires |
 |---|---|
-| **Container State Changes** | `start`, `stop`, `die` (crash), `restart`, `health_status`. Los eventos `stop`/`die` se debouncean 15s para detectar reinicios y enviar un solo mensaje "Container Restarted" en lugar de stop+start separados |
-| **Resource Alerts** | CPU o memoria de un contenedor supera el umbral (global o por-container) |
-| **UI Actions** | Acción manual disparada desde el panel: start/stop/restart/rebuild/remove |
-| **Action Errors** | Falló una acción ejecutada desde la UI (incluye el mensaje de error) |
+| **Container State Changes** | `start`, `stop`, `die` (crash), `restart`, `health_status`. `stop`/`die` events are debounced 15s to detect restarts and send a single "Container Restarted" message instead of separate stop+start |
+| **Resource Alerts** | A container's CPU or memory exceeds the threshold (global or per-container) |
+| **UI Actions** | Manual action triggered from the panel: start/stop/restart/rebuild/remove |
+| **Action Errors** | An action executed from the UI failed (includes the error message) |
 
-Mecanismos anti-spam:
+Anti-spam mechanisms:
 
-- **Cooldown global** — minutos mínimos entre alertas del mismo tipo+servicio (default `5 min`, configurable `1-60`)
-- **Down reminder** — si un contenedor sigue caído, reenvía un recordatorio "Container Still Down" cada N minutos (default `5 min`)
-- **Cola con rate limit** — 500ms mínimo entre webhooks; si Discord responde `429`, respeta el `Retry-After` y reintenta
-- **Debounce de stop/die** — buffer de 15s para colapsar restart/redeploy en una sola notificación
+- **Global cooldown** — minimum minutes between alerts of the same type+service (default `5 min`, configurable `1-60`)
+- **Down reminder** — if a container stays down, resends a "Container Still Down" reminder every N minutes (default `5 min`)
+- **Queue with rate limit** — 500ms minimum between webhooks; if Discord responds `429`, respects `Retry-After` and retries
+- **Stop/die debounce** — 15s buffer to collapse restart/redeploy into a single notification
 
-Umbrales:
+Thresholds:
 
-- **Globales** — CPU% y MEM% en Settings (default 50% / 60%)
-- **Por contenedor** — desde la página de monitoring, click en el ícono ⚙️ de un servicio para abrir el panel inline. Permite:
-  - Activar/desactivar notificaciones para ese contenedor
-  - Override del umbral de CPU (drag del slider)
-  - Override del umbral de memoria
-  - Reset al valor global (X)
-  - Los overrides se persisten en `.dockerflow-container-settings.json` y se auto-guardan con debounce de 400ms
+- **Globals** — CPU% and MEM% in Settings (default 50% / 60%)
+- **Per container** — from the monitoring page, click the ⚙️ icon on a service to open the inline panel. Allows:
+  - Enable/disable notifications for that container
+  - CPU threshold override (slider)
+  - Memory threshold override
+  - Reset to global value (X)
+  - Overrides persist in `.dockerflow-container-settings.json` and auto-save with 400ms debounce
 
-Botón **Test** en Settings envía un embed de prueba al webhook para verificar que funciona antes de habilitarlo.
+A **Test** button in Settings sends a test embed to the webhook to verify it works before enabling.
 
 ## Tests
 
-El proyecto usa [Vitest](https://vitest.dev/) para tests unitarios.
+The project uses [Vitest](https://vitest.dev/) for unit tests.
 
 ```bash
-# Correr todos los tests
+# Run all tests
 bun run test
 
-# Correr en modo watch (re-ejecuta al guardar)
+# Watch mode (re-runs on save)
 bun run test:watch
 
-# Verificar tipos TypeScript
+# Type-check TypeScript
 bun run typecheck
 ```
 
-Los tests cubren:
+Tests cover:
 
-- **Logica de processing** (`src/client/hooks/processing.test.ts`) — sincronizacion de estados cuando se ejecutan acciones sobre containers (start/stop/restart), incluyendo manejo de estados crashed/dead, timeouts y minDuration
-- **Deteccion de conexiones** (`src/server/docker.test.ts`) — descubrimiento de relaciones entre servicios por red compartida, clasificacion de servicios (infra, proxy, worker) y deduplicacion
+- **Processing logic** (`src/client/hooks/processing.test.ts`) — state sync when actions are executed on containers (start/stop/restart), including crashed/dead states, timeouts and minDuration handling
+- **Connection detection** (`src/server/docker.test.ts`) — discovery of service relationships via shared networks, service classification (infra, proxy, worker) and deduplication
+- **Memory breakdown calc** (`src/server/watcher.test.ts`) — `computeMemoryBreakdown()` covering cgroup v1 and v2, fallback paths and edge cases
 
 ## CI
 
-GitHub Actions ejecuta automaticamente en cada push/PR a `main`:
+GitHub Actions runs automatically on every push/PR to `main`:
 
-1. Typecheck (errores de tipos)
+1. Typecheck (type errors)
 2. Tests (Vitest)
-3. Build (produccion)
+3. Build (production)
 
-Ver `.github/workflows/ci.yml`.
+See `.github/workflows/ci.yml`.
 
-## Seguridad
+## Security
 
-### Red y autenticación
+### Network and authentication
 
-- **HTTPS obligatorio en produccion** — el token de autenticacion viaja en headers HTTP. Sin HTTPS, es texto plano visible en la red. Usa un reverse proxy con TLS (nginx, Caddy, Cloudflare Tunnel) delante de ContainerFlow.
-- **Rate limiting** — incluido por defecto: 5 intentos fallidos por minuto por IP. Despues del limite, retorna `429 Too Many Requests`. Aplica tanto a la API REST como a la autenticacion WebSocket.
-- **Acceso local por defecto** — sin `AUTH_TOKEN`, el servidor solo escucha en `127.0.0.1`. Con `AUTH_TOKEN`, escucha en `0.0.0.0` para acceso remoto.
+- **HTTPS required in production** — the auth token travels in HTTP headers. Without HTTPS, it's plaintext visible on the network. Use a TLS-terminating reverse proxy (nginx, Caddy, Cloudflare Tunnel) in front of ContainerFlow.
+- **Rate limiting** — included by default: 5 failed attempts per minute per IP. After the limit, returns `429 Too Many Requests`. Applies to both REST API and WebSocket authentication.
+- **Local access by default** — without `AUTH_TOKEN`, the server only listens on `127.0.0.1`. With `AUTH_TOKEN`, it listens on `0.0.0.0` for remote access.
 
-### Privilegios del container
+### Container privileges
 
-ContainerFlow es una herramienta privilegiada por diseño:
+ContainerFlow is a privileged tool by design:
 
-- **Docker socket** (`/var/run/docker.sock`) — acceso completo al daemon Docker. Equivalente a root en el host: puede crear containers privilegiados, montar cualquier path, leer/escribir el filesystem completo. Si ContainerFlow se compromete, el host está comprometido.
-- **Mounts read-only del host** — el `docker-compose.yml` monta `/home`, `/opt`, `/srv` y `/root` como `:ro` para que las acciones `rebuild` y `exec` puedan leer compose files. Permite **lectura** de archivos en esos directorios (incluyendo SSH keys, git credentials, etc. de cualquier usuario en el sistema).
+- **Docker socket** (`/var/run/docker.sock`) — full daemon access. Equivalent to root on the host: can create privileged containers, mount any path, read/write the entire filesystem. If ContainerFlow is compromised, the host is compromised.
+- **Read-only host mounts** — `docker-compose.yml` mounts `/home`, `/opt`, `/srv` and `/root` as `:ro` so the `rebuild` and `exec` actions can read compose files. Allows **read access** to files in those directories (including SSH keys, git credentials, etc. of any user on the system).
 
-**Implicaciones en servidor multi-usuario:** si varios usuarios (`/home/jorge`, `/home/israel`, `/home/pedro`) tienen sus proyectos en el mismo host, ContainerFlow puede leer los archivos de todos ellos. El acceso al socket Docker hace que esto sea ruido relativo (cualquiera con el socket ya tiene acceso total al host), pero conviene estar consciente.
+**Implications on a multi-user server:** if multiple users (`/home/jorge`, `/home/israel`, `/home/pedro`) have projects on the same host, ContainerFlow can read all their files. Docker socket access makes this relatively moot (anyone with the socket already has full host access), but worth being aware of.
 
-### Setup recomendado para single-user
+### Recommended setup for single-user
 
-Defaults actuales — convenientes y suficientes:
+Current defaults — convenient and sufficient:
 
 ```yaml
 volumes:
@@ -290,137 +297,141 @@ volumes:
   - /root:/root:ro
 ```
 
-### Setup recomendado para multi-user / producción
+### Recommended setup for multi-user / production
 
-Limita los mounts a directorios específicos donde tienes proyectos:
+Limit mounts to specific directories where you have projects:
 
 ```yaml
 volumes:
   - /var/run/docker.sock:/var/run/docker.sock
   - containerflow-data:/app/data
-  # En vez de /home completo, solo tus proyectos
+  # Instead of all of /home, only your projects
   - /home/jorge/git:/home/jorge/git:ro
   - /srv/apps:/srv/apps:ro
 ```
 
-Esto reduce el blast radius si hay un bug que filtre paths.
+This reduces blast radius if there's a bug that leaks paths.
 
-### Setup recomendado para deploys compartidos: `ALLOWED_PATHS`
+### Recommended setup for shared deploys: `ALLOWED_PATHS`
 
-Si varios admins comparten un servidor y cada uno solo debe interactuar con sus propios containers, configura la variable `ALLOWED_PATHS` en `.env`:
+If multiple admins share a server and each should only interact with their own containers, configure the `ALLOWED_PATHS` env var in `.env`:
 
 ```bash
 # .env
-ALLOWED_PATHS=/home/jorge:/srv/myapp    # rutas separadas por ":"
-ALLOW_NON_COMPOSE=false                  # opcional, default false
+ALLOWED_PATHS=/home/jorge:/srv/myapp    # paths separated by ":"
+ALLOW_NON_COMPOSE=false                  # optional, default false
 ```
 
-**Comportamiento:**
+**Behavior:**
 
-- `ALLOWED_PATHS` vacío (default) → modo permisivo: todas las acciones disponibles para todos los containers
-- `ALLOWED_PATHS` con valores → modo estricto:
-  - **Visualización, stats y logs:** siempre disponibles para todos los containers (la visibilidad viene del Docker socket)
-  - **Acciones** (start/stop/restart/rebuild/remove/exec): solo permitidas si el compose file del container está bajo una ruta permitida
-  - Los containers fuera de las rutas aparecen con un **ícono de candado 🔒** y todas sus acciones quedan deshabilitadas
-  - El menú contextual y el panel de detalle muestran un badge "View-only"
+- `ALLOWED_PATHS` empty (default) → permissive mode: all actions available for all containers
+- `ALLOWED_PATHS` with values → strict mode:
+  - **Visualization, stats and logs:** always available for all containers (visibility comes from the Docker socket)
+  - **Actions** (start/stop/restart/rebuild/remove/exec): only allowed if the container's compose file is under an allowed path
+  - Containers outside the paths appear with a **lock icon 🔒** and all their actions are disabled
+  - The context menu and detail panel show a "View-only" badge
 
-**`ALLOW_NON_COMPOSE`** controla qué pasa con containers corridos manualmente (`docker run` sin labels de compose):
+**`ALLOW_NON_COMPOSE`** controls what happens with manually-run containers (`docker run` without compose labels):
 
-- `false` (default): bloquea acciones — view-only para containers no-compose
-- `true`: permite acciones sobre containers no-compose (útil si tienes containers utilitarios como Portainer agent, Watchtower, etc.)
+- `false` (default): blocks actions — view-only for non-compose containers
+- `true`: allows actions on non-compose containers (useful if you have utility containers like Portainer agent, Watchtower, etc.)
 
-**Ejemplo multi-usuario:**
+**Multi-user example:**
 
 ```bash
-# Servidor compartido con jorge, israel, pedro, nayeli
-# Cada uno corre su propia instancia de ContainerFlow en puerto distinto
-# El de jorge:
+# Shared server with jorge, israel, pedro, nayeli
+# Each runs their own ContainerFlow instance on a different port
+# jorge's:
 ALLOWED_PATHS=/home/jorge
 
-# El de israel:
+# israel's:
 ALLOWED_PATHS=/home/israel
 ```
 
-Cada uno ve **todos** los containers del servidor, pero solo puede hacer rebuild/restart/exec sobre los suyos.
+Each one sees **all** the server's containers, but can only rebuild/restart/exec their own.
 
-**Endpoint relevante:** `GET /api/config` devuelve la config activa (consumido por el frontend para deshabilitar botones).
+**Relevant endpoint:** `GET /api/config` returns the active config (consumed by the frontend to disable buttons).
 
 ## Stack
 
-| Componente | Tecnologia |
+| Component | Technology |
 |---|---|
 | Runtime | Bun |
 | Server | Hono |
 | Frontend | React 19 + Vite 6 |
-| Grafos | @xyflow/react 12 |
-| Estilos | Tailwind CSS 4 |
-| Iconos | Lucide React |
+| Graph | @xyflow/react 12 |
+| Styles | Tailwind CSS 4 |
+| Icons | Lucide React |
 | Docker API | dockerode |
-| Comunicacion | WebSocket nativo |
+| Communication | Native WebSocket |
 | Tests | Vitest |
 
-## Estructura
+## Structure
 
 ```
 src/
   server/
-    index.ts             — servidor Hono + WebSocket + CLI args + REST API
-    docker.ts            — descubrimiento de servicios y conexiones
-    watcher.ts           — polling de stats + stream de eventos Docker
-    stats-db.ts          — SQLite de historial de stats (insert, query por rango, cleanup 7d)
-    discord.ts           — webhooks Discord (state changes, resource alerts, cooldown, debounce, queue)
-    container-settings.ts — overrides por contenedor (umbrales y toggle de notificaciones)
+    index.ts             — Hono server + WebSocket + CLI args + REST API
+    docker.ts            — service and connection discovery
+    watcher.ts           — stats polling + Docker events stream (computeMemoryBreakdown)
+    stats-db.ts          — SQLite stats history (insert, query by range, 7d cleanup)
+    events-db.ts         — SQLite events_log + notifications_log
+    discord.ts           — Discord webhooks (state changes, resource alerts, cooldown, debounce, queue)
+    container-settings.ts — per-container overrides (thresholds and notification toggle)
   client/
-    App.tsx          — dashboard principal + login screen
-    main.tsx         — entry point React
-    index.css        — Tailwind + animaciones custom
+    App.tsx          — main dashboard + login screen
+    main.tsx         — React entry point
+    index.css        — Tailwind + custom animations
+    i18n.tsx         — translations EN + ES, useT() hook
     nodes/
-      ServiceNode.tsx — nodo visual por container
-      GroupNode.tsx    — header de grupo (proyecto/compose)
+      ServiceNode.tsx — visual node per container
+      GroupNode.tsx    — group header (project/compose)
     hooks/
-      useDocker.ts        — hook WebSocket para datos en tiempo real + toast de errores de accion
-      useServerConfig.ts  — fetch /api/config + helper canInteract() para ALLOWED_PATHS
-      useStatsHistory.ts  — fetch del historial de stats por rango (1h/6h/24h/7d)
-      useStatsStore.ts    — store en memoria para stats live
-      processing.ts       — logica pura de estados processing
+      useDocker.ts        — WebSocket hook for real-time data + action error toasts
+      useServerConfig.ts  — fetch /api/config + canInteract() helper for ALLOWED_PATHS
+      useStatsHistory.ts  — fetch stats history by range (1h/6h/24h/7d)
+      useStatsStore.ts    — in-memory store for live stats
+      processing.ts       — pure processing state logic
     engine/
-      layout.ts      — layout de grupos + grid + edges
+      layout.ts      — group layout + grid + edges
     components/
-      HeaderBar.tsx        — barra superior con navegacion
-      EdgeLegend.tsx       — leyenda de tipos de conexion
-      LoginScreen.tsx      — pantalla de autenticacion
-      NodeContextMenu.tsx  — menu contextual de nodos (con disable cuando locked)
-      OffsetEdge.tsx       — edge custom con offset para evitar superposicion
-      Sparkline.tsx        — gráfica de línea ligera para historial de stats
-      StatsCard.tsx        — tarjeta de métrica con sparkline, hover, promedio y umbral
-      ThresholdBar.tsx     — slider de umbral por contenedor con override/reset
-      ActionErrorToast.tsx — stack de toasts top-right para errores de acciones
+      HeaderBar.tsx        — top navigation bar with notification bell
+      EdgeLegend.tsx       — connection type legend
+      LoginScreen.tsx      — authentication screen
+      NodeContextMenu.tsx  — node context menu (disabled when locked)
+      OffsetEdge.tsx       — custom edge with offset to avoid overlap
+      Sparkline.tsx        — lightweight line chart for stats history
+      StatsCard.tsx        — metric card with sparkline, hover, average and threshold
+      ThresholdBar.tsx     — per-container threshold slider with override/reset
+      ActionErrorToast.tsx — top-right toast stack for action errors
+      Tooltip.tsx          — info tooltip with portal + smart placement
     panels/
-      DetailPanel.tsx — panel lateral con info, stats, env, config y logs
-      LogPanel.tsx    — panel de logs por container
+      DetailPanel.tsx — side panel with info, stats, env, config and logs
+      LogPanel.tsx    — log panel per container
     pages/
-      MonitoringPage.tsx — historial de CPU/RAM, eventos Docker y umbrales por contenedor
-      SettingsPage.tsx   — configuracion (auth, Discord webhook, eventos, umbrales globales)
+      MonitoringPage.tsx — CPU/RAM history, Docker events and per-container thresholds
+      SettingsPage.tsx   — configuration (auth, Discord webhook, events, global thresholds)
   shared/
-    types.ts         — tipos compartidos server/client
+    types.ts         — shared server/client types
 ```
 
-## Comunidad y contribuciones
+## Community and contributions
 
-ContainerFlow está en desarrollo activo (`v0.x`).
+ContainerFlow is in active development (`v0.x`).
 
-- 🐛 **Bug?** Abre un [issue](https://github.com/RGJorge/containerflow/issues/new?template=bug_report.md)
-- 💡 **Idea?** Abre un [feature request](https://github.com/RGJorge/containerflow/issues/new?template=feature_request.md)
-- 🔒 **Vulnerabilidad de seguridad?** Reporta privadamente — ver [SECURITY.md](SECURITY.md)
-- 📜 **Code of Conduct** — ver [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- 🛠 **Quiero contribuir código** — ver [CONTRIBUTING.md](CONTRIBUTING.md). Actualmente solo aceptamos issues; PRs se abrirán cuando el proyecto madure.
+- 🐛 **Bug?** Open an [issue](https://github.com/RGJorge/containerflow/issues/new?template=bug_report.md)
+- 💡 **Idea?** Open a [feature request](https://github.com/RGJorge/containerflow/issues/new?template=feature_request.md)
+- 💬 **Discussion / question?** Open a [discussion](https://github.com/RGJorge/containerflow/discussions)
+- 🔒 **Security vulnerability?** Report privately — see [SECURITY.md](SECURITY.md)
+- 📜 **Code of Conduct** — see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- 🛠 **Want to contribute code?** — see [CONTRIBUTING.md](CONTRIBUTING.md). Currently we only accept issues; PRs will open as the project matures and patterns stabilize.
 
-Si ContainerFlow te resulta útil, una ⭐ en GitHub ayuda a la visibilidad del proyecto.
+If ContainerFlow is useful to you, a ⭐ on GitHub helps project visibility.
 
-## Licencia
+## License
 
 Copyright (C) 2026 Jorge Gonzalez D. (RGJorge)
 
-Este proyecto esta licenciado bajo **GNU Affero General Public License v3.0** (AGPL-3.0). Ver el archivo [LICENSE](LICENSE) para los terminos completos.
+This project is licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0). See the [LICENSE](LICENSE) file for full terms.
 
-Para uso comercial con codigo cerrado, contactar para una licencia comercial: alteonx.servicios@gmail.com
+For commercial use with closed source, contact for a commercial license: alteonx.servicios@gmail.com
