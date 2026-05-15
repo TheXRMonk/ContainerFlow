@@ -1,0 +1,34 @@
+﻿services:
+  containerflow:
+    # Built locally from the Dockerfile in this repo. Portainer will clone
+    # the repo and run the build on your NAS the first time you deploy.
+    build: .
+    container_name: containerflow
+    ports:
+      - "9470:9470"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - containerflow-data:/app/data
+      # Read-only mount of your compose projects directory.
+      # Required for the rebuild / recreate / remove actions to read
+      # docker-compose.yml + .env files from the host.
+      - ${HOST_PROJECTS_DIR:-/var/empty}:${HOST_PROJECTS_DIR:-/var/empty}:ro
+    environment:
+      # Internal server port (leave at 9470 unless you have a reason)
+      - PORT=9470
+      # Persistence directory inside the container — keep as /app/data
+      - DATA_DIR=/app/data
+      # REQUIRED when deploying via Portainer / on a NAS — without this the
+      # server binds to 127.0.0.1 inside the container and is unreachable.
+      - AUTH_TOKEN=${AUTH_TOKEN}
+      # Restrict actions (start/stop/restart/rebuild/remove/exec) to containers
+      # whose compose file lives under these paths. ":"-separated list.
+      # Set to the same value as HOST_PROJECTS_DIR for a safe default.
+      - ALLOWED_PATHS=${ALLOWED_PATHS:-}
+      # Only meaningful when ALLOWED_PATHS is set. true = allow actions on
+      # containers started with `docker run` (no compose labels).
+      - ALLOW_NON_COMPOSE=${ALLOW_NON_COMPOSE:-false}
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.15
+
