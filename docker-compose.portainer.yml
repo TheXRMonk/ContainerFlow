@@ -8,7 +8,7 @@
       - "9470:9470"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - containerflow-data:/app/data
+      - ${APPLICATIONS_PATH}/ContainerFlow-data:/app/data
       # Read-only mount of your compose projects directory.
       # Required for the rebuild / recreate / remove actions to read
       # docker-compose.yml + .env files from the host.
